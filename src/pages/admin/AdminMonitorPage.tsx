@@ -1,40 +1,122 @@
-import { Badge, Divider, Drawer, Group, Image, Paper, Stack, Text, Title } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
-import { IconFileInvoice } from '@tabler/icons-react';
-import { useState } from 'react';
-import { adminUi as AU } from '../../theme';
+import {
+  Badge,
+  Group,
+  Paper,
+  Pagination,
+  Select,
+  Skeleton,
+  Stack,
+  Table,
+  Tabs,
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core';
+import { useMemo, useState } from 'react';
+import { useApi } from '../../hooks/useApi';
+import { usePagination } from '../../hooks/usePagination';
+import { adminService } from '../../api/services/admin.service';
+import type { Booking, DeliveryRequest, PaginatedResponse, Trip } from '../../api/types';
+import { formatDate, formatDateTime, populatedName } from './adminHelpers';
 
-type QueueItem = {
-  id: string;
-  title: string;
-  sub: string;
-  status: 'Review' | 'Flagged' | 'Cleared' | 'Pending';
-};
+function tripRoute(t: Trip): string {
+  return `${t.origin} → ${t.destination}`;
+}
 
-const ROWS: QueueItem[] = [
-  { id: 'mon-01', title: 'PAY-98214 · Receipt mismatch', sub: 'User attached alternate invoice · $420', status: 'Review' },
-  { id: 'mon-02', title: 'PAY-77201 · High velocity hold', sub: '3 payouts in 6 hours · AML rule', status: 'Flagged' },
-  { id: 'mon-03', title: 'PAY-64038 · Automated review', sub: 'Standard clearance · escrow release', status: 'Cleared' },
-  { id: 'mon-04', title: 'PAY-55290 · Stripe dispute', sub: 'Evidence window closes in 41h', status: 'Pending' },
-];
+function bookingRoute(b: Booking): string {
+  const trip = typeof b.tripId === 'object' && b.tripId && 'origin' in b.tripId ? b.tripId : null;
+  if (trip) return `${trip.origin} → ${trip.destination}`;
+  return '—';
+}
 
-function rowBadge(status: QueueItem['status']) {
-  const colors: Record<QueueItem['status'], string> = {
-    Review: 'yellow',
-    Flagged: 'red',
-    Cleared: 'teal',
-    Pending: 'orange',
-  };
+function statusBadge(status: string) {
   return (
-    <Badge color={colors[status]} variant="light" size="sm">
+    <Badge variant="light" size="sm" color="gray">
       {status}
     </Badge>
   );
 }
 
+function urgencyColor(u: string) {
+  if (u === 'critical') return 'red';
+  if (u === 'high') return 'orange';
+  if (u === 'medium') return 'yellow';
+  return 'gray';
+}
+
 export function AdminMonitorPage() {
-  const [opened, { open, close }] = useDisclosure(false);
-  const [picked, setPicked] = useState<(typeof ROWS)[0] | null>(null);
+  const { page, limit, setPage } = usePagination(20);
+  const [tab, setTab] = useState<'trips' | 'requests' | 'bookings'>('trips');
+
+  const [tStatus, setTStatus] = useState<string | null>(null);
+  const [tOrigin, setTOrigin] = useState('');
+  const [tDest, setTDest] = useState('');
+  const [tFrom, setTFrom] = useState('');
+  const [tTo, setTTo] = useState('');
+
+  const [rStatus, setRStatus] = useState<string | null>(null);
+  const [rType, setRType] = useState<string | null>(null);
+  const [rUrgency, setRUrgency] = useState<string | null>(null);
+
+  const [bStatus, setBStatus] = useState<string | null>(null);
+  const [bFrom, setBFrom] = useState('');
+  const [bTo, setBTo] = useState('');
+
+  const tripParams = useMemo(
+    () => ({
+      status: tStatus ?? undefined,
+      origin: tOrigin.trim() || undefined,
+      destination: tDest.trim() || undefined,
+      dateFrom: tFrom || undefined,
+      dateTo: tTo || undefined,
+      page,
+      limit,
+    }),
+    [tStatus, tOrigin, tDest, tFrom, tTo, page, limit],
+  );
+
+  const reqParams = useMemo(
+    () => ({
+      status: rStatus ?? undefined,
+      type: rType ?? undefined,
+      urgencyLevel: rUrgency ?? undefined,
+      page,
+      limit,
+    }),
+    [rStatus, rType, rUrgency, page, limit],
+  );
+
+  const bookParams = useMemo(
+    () => ({
+      status: bStatus ?? undefined,
+      dateFrom: bFrom || undefined,
+      dateTo: bTo || undefined,
+      page,
+      limit,
+    }),
+    [bStatus, bFrom, bTo, page, limit],
+  );
+
+  const { data, isLoading, error } = useApi<PaginatedResponse<Trip | DeliveryRequest | Booking>>(
+    () => {
+      if (tab === 'trips') return adminService.getTrips(tripParams) as Promise<PaginatedResponse<Trip | DeliveryRequest | Booking>>;
+      if (tab === 'requests')
+        return adminService.getRequests(reqParams) as Promise<PaginatedResponse<Trip | DeliveryRequest | Booking>>;
+      return adminService.getBookings(bookParams) as Promise<PaginatedResponse<Trip | DeliveryRequest | Booking>>;
+    },
+    [tab, tripParams, reqParams, bookParams],
+  );
+
+  const onTabChange = (v: string | null) => {
+    if (v === 'trips' || v === 'requests' || v === 'bookings') {
+      setTab(v);
+      setPage(1);
+    }
+  };
+
+  const rows = data?.data ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
     <Stack gap="lg">
@@ -43,132 +125,266 @@ export function AdminMonitorPage() {
           Monitoring
         </Title>
         <Text fz={14} c="dimmed" mt={4}>
-          Payment and compliance queues with receipt-level detail.
+          Trips, requests, and bookings across the platform.
         </Text>
       </div>
 
-      <Paper radius="md" withBorder shadow="xs" bg="#fff">
-        <Stack gap={0}>
-          {ROWS.map((row, idx) => (
-            <Paper
-              key={row.id}
-              component="button"
-              type="button"
-              px="lg"
-              py="md"
-              radius={0}
-              withBorder={false}
-              onClick={() => {
-                setPicked(row);
-                open();
-              }}
-              style={{
-                cursor: 'pointer',
-                textAlign: 'left',
-                borderBottom: idx < ROWS.length - 1 ? '1px solid #e8ecf1' : 'none',
-                background: picked?.id === row.id ? `${AU.accentTeal}12` : 'transparent',
-                transition: 'background 120ms ease',
-              }}
-            >
-              <Group justify="space-between" wrap="nowrap" gap="md">
-                <Group gap="md" wrap="nowrap" miw={0}>
-                  <ThemeIconMuted />
-                  <div style={{ minWidth: 0 }}>
-                    <Text fw={700} fz={14} truncate>
-                      {row.title}
-                    </Text>
-                    <Text fz={13} c="dimmed">
-                      {row.sub}
-                    </Text>
-                  </div>
-                </Group>
-                {rowBadge(row.status)}
-              </Group>
-            </Paper>
-          ))}
-        </Stack>
-      </Paper>
+      {error ? (
+        <Text c="red" fz={14}>
+          {error}
+        </Text>
+      ) : null}
 
-      <Drawer
-        opened={opened}
-        onClose={() => {
-          close();
-          setPicked(null);
-        }}
-        position="right"
-        size="lg"
-        offset={16}
-        radius="lg"
-        title={
-          picked ? (
-            <Text fz={13} fw={700} tt="uppercase" c="dimmed">
-              Payment details
-            </Text>
-          ) : null
-        }
-      >
-        {picked ? (
-          <Stack gap="md">
-            <Group justify="space-between">
-              <Text fw={700} fz={18}>
-                {picked.title.split(' · ')[0]}
-              </Text>
-              {rowBadge(picked.status)}
-            </Group>
+      <Tabs value={tab} onChange={onTabChange}>
+        <Tabs.List>
+          <Tabs.Tab value="trips">Trips</Tabs.Tab>
+          <Tabs.Tab value="requests">Requests</Tabs.Tab>
+          <Tabs.Tab value="bookings">Bookings</Tabs.Tab>
+        </Tabs.List>
 
-            <Stack gap={6}>
-              <Text fz={12} fw={700} tt="uppercase" c="dimmed">
-                Transaction ID
-              </Text>
-              <Text fz={15} fw={700}>
-                {picked.title.split(' · ')[0]}
-              </Text>
-            </Stack>
-
-            <Stack gap={6}>
-              <Text fz={12} fw={700} tt="uppercase" c="dimmed">
-                Amount
-              </Text>
-              <Text fz={22} fw={800}>
-                $420.00
-              </Text>
-              <Text fz={13} c="dimmed">
-                Held in escrow until delivery confirmation matched receipt below.
-              </Text>
-            </Stack>
-
-            <Divider />
-
-            <Text fz={12} fw={700} tt="uppercase" c="dimmed">
-              Attachment preview
-            </Text>
-            <Paper radius="md" withBorder bg="#f8fafc" p={0} style={{ overflow: 'hidden' }}>
-              <Image
-                radius={0}
-                h={200}
-                src="https://images.unsplash.com/photo-1563986768494-10f6b4c5c4c9?w=800&q=70"
-                alt="Receipt thumbnail"
+        <Tabs.Panel value="trips" pt="md">
+          <Paper p="md" radius="md" withBorder mb="md">
+            <Group wrap="wrap" gap="sm">
+              <Select
+                placeholder="Status"
+                clearable
+                data={[
+                  { value: 'active', label: 'Active' },
+                  { value: 'completed', label: 'Completed' },
+                  { value: 'cancelled', label: 'Cancelled' },
+                ]}
+                value={tStatus}
+                onChange={(v) => {
+                  setTStatus(v);
+                  setPage(1);
+                }}
+                w={160}
               />
-              <Group justify="space-between" p="sm" bg="#fff">
-                <Text fz={12} truncate>
-                  receipt-may-{picked.id.slice(-2)}.jpg
-                </Text>
-                <Text fz={12} c={AU.accentTeal} fw={600}>
-                  View full size
-                </Text>
-              </Group>
+              <TextInput label="Origin" value={tOrigin} onChange={(e) => setTOrigin(e.currentTarget.value)} w={160} />
+              <TextInput label="Destination" value={tDest} onChange={(e) => setTDest(e.currentTarget.value)} w={160} />
+              <TextInput type="date" label="From" value={tFrom} onChange={(e) => setTFrom(e.currentTarget.value)} w={160} />
+              <TextInput type="date" label="To" value={tTo} onChange={(e) => setTTo(e.currentTarget.value)} w={160} />
+            </Group>
+          </Paper>
+          {tab === 'trips' && isLoading ? (
+            <Stack gap="sm">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} height={36} />
+              ))}
+            </Stack>
+          ) : tab === 'trips' && rows.length === 0 ? (
+            <Text c="dimmed">No trips found.</Text>
+          ) : tab === 'trips' ? (
+            <Paper radius="md" withBorder>
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Traveler</Table.Th>
+                    <Table.Th>Route</Table.Th>
+                    <Table.Th>Departure</Table.Th>
+                    <Table.Th>Space</Table.Th>
+                    <Table.Th>Matched</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th>Created</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {(rows as Trip[]).map((t) => (
+                    <Table.Tr key={t._id}>
+                      <Table.Td>{populatedName(t.travelerId)}</Table.Td>
+                      <Table.Td fz={13}>{tripRoute(t)}</Table.Td>
+                      <Table.Td fz={13}>{formatDate(t.departureDate)}</Table.Td>
+                      <Table.Td>{t.luggageSpace}</Table.Td>
+                      <Table.Td>{t.matchedRequestsCount ?? 0}</Table.Td>
+                      <Table.Td>{statusBadge(t.status)}</Table.Td>
+                      <Table.Td fz={13} c="dimmed">
+                        {formatDateTime(t.createdAt)}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
             </Paper>
-          </Stack>
-        ) : null}
-      </Drawer>
-    </Stack>
-  );
-}
+          ) : null}
+        </Tabs.Panel>
 
-function ThemeIconMuted() {
-  return (
-    <Paper radius="md" w={42} h={42} bg={AU.pageBg} style={{ display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-      <IconFileInvoice size={22} stroke={1.5} style={{ color: AU.accentTeal }} />
-    </Paper>
+        <Tabs.Panel value="requests" pt="md">
+          <Paper p="md" radius="md" withBorder mb="md">
+            <Group wrap="wrap" gap="sm">
+              <Select
+                placeholder="Status"
+                clearable
+                data={[
+                  { value: 'pending', label: 'Pending' },
+                  { value: 'matched', label: 'Matched' },
+                  { value: 'completed', label: 'Completed' },
+                  { value: 'cancelled', label: 'Cancelled' },
+                ]}
+                value={rStatus}
+                onChange={(v) => {
+                  setRStatus(v);
+                  setPage(1);
+                }}
+                w={160}
+              />
+              <Select
+                placeholder="Type"
+                clearable
+                data={[
+                  { value: 'standard', label: 'Standard' },
+                  { value: 'support', label: 'Support' },
+                ]}
+                value={rType}
+                onChange={(v) => {
+                  setRType(v);
+                  setPage(1);
+                }}
+                w={140}
+              />
+              <Select
+                placeholder="Urgency"
+                clearable
+                data={[
+                  { value: 'critical', label: 'Critical' },
+                  { value: 'high', label: 'High' },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'low', label: 'Low' },
+                ]}
+                value={rUrgency}
+                onChange={(v) => {
+                  setRUrgency(v);
+                  setPage(1);
+                }}
+                w={140}
+              />
+            </Group>
+          </Paper>
+          {tab === 'requests' && isLoading ? (
+            <Stack gap="sm">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} height={36} />
+              ))}
+            </Stack>
+          ) : tab === 'requests' && rows.length === 0 ? (
+            <Text c="dimmed">No requests found.</Text>
+          ) : tab === 'requests' ? (
+            <Paper radius="md" withBorder>
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Requester</Table.Th>
+                    <Table.Th>Item</Table.Th>
+                    <Table.Th>Route</Table.Th>
+                    <Table.Th>Type</Table.Th>
+                    <Table.Th>Urgency</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th>Deadline</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {(rows as DeliveryRequest[]).map((r) => (
+                    <Table.Tr key={r._id}>
+                      <Table.Td>{populatedName(r.requesterId)}</Table.Td>
+                      <Table.Td fz={13}>{r.itemName}</Table.Td>
+                      <Table.Td fz={13}>
+                        {r.origin} → {r.destination}
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge size="sm" variant="light">
+                          {r.type}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge size="sm" color={urgencyColor(r.urgencyLevel)} variant="light">
+                          {r.urgencyLevel}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>{statusBadge(r.status)}</Table.Td>
+                      <Table.Td fz={13} c="dimmed">
+                        {formatDateTime(r.deliveryDeadline)}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Paper>
+          ) : null}
+        </Tabs.Panel>
+
+        <Tabs.Panel value="bookings" pt="md">
+          <Paper p="md" radius="md" withBorder mb="md">
+            <Group wrap="wrap" gap="sm">
+              <Select
+                placeholder="Status"
+                clearable
+                data={[
+                  { value: 'pending_acceptance', label: 'Pending acceptance' },
+                  { value: 'confirmed', label: 'Confirmed' },
+                  { value: 'paid', label: 'Paid' },
+                  { value: 'in_transit', label: 'In transit' },
+                  { value: 'completed', label: 'Completed' },
+                  { value: 'disputed', label: 'Disputed' },
+                  { value: 'cancelled', label: 'Cancelled' },
+                ]}
+                value={bStatus}
+                onChange={(v) => {
+                  setBStatus(v);
+                  setPage(1);
+                }}
+                w={200}
+              />
+              <TextInput type="date" label="From" value={bFrom} onChange={(e) => setBFrom(e.currentTarget.value)} w={160} />
+              <TextInput type="date" label="To" value={bTo} onChange={(e) => setBTo(e.currentTarget.value)} w={160} />
+            </Group>
+          </Paper>
+          {tab === 'bookings' && isLoading ? (
+            <Stack gap="sm">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} height={36} />
+              ))}
+            </Stack>
+          ) : tab === 'bookings' && rows.length === 0 ? (
+            <Text c="dimmed">No bookings found.</Text>
+          ) : tab === 'bookings' ? (
+            <Paper radius="md" withBorder>
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Ref</Table.Th>
+                    <Table.Th>Requester</Table.Th>
+                    <Table.Th>Traveler</Table.Th>
+                    <Table.Th>Route</Table.Th>
+                    <Table.Th>Fee</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th>Created</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {(rows as Booking[]).map((b) => (
+                    <Table.Tr key={b._id}>
+                      <Table.Td fw={700}>{b.bookingRef}</Table.Td>
+                      <Table.Td>{populatedName(b.requesterId)}</Table.Td>
+                      <Table.Td>{populatedName(b.travelerId)}</Table.Td>
+                      <Table.Td fz={13}>{bookingRoute(b)}</Table.Td>
+                      <Table.Td>{b.agreedFee ?? b.offeredFee}</Table.Td>
+                      <Table.Td>{statusBadge(b.status)}</Table.Td>
+                      <Table.Td fz={13} c="dimmed">
+                        {formatDateTime(b.createdAt)}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Paper>
+          ) : null}
+        </Tabs.Panel>
+      </Tabs>
+
+      {!isLoading && rows.length > 0 ? (
+        <Group justify="center">
+          <Pagination total={totalPages} value={page} onChange={setPage} size="sm" />
+        </Group>
+      ) : null}
+    </Stack>
   );
 }

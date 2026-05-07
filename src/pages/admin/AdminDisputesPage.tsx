@@ -1,121 +1,91 @@
 import {
-  Avatar,
   Badge,
   Button,
-  Grid,
   Group,
+  Modal,
+  NumberInput,
+  Pagination,
   Paper,
-  Select,
-  SimpleGrid,
+  Radio,
+  Skeleton,
   Stack,
   Table,
   Text,
-  TextInput,
+  Textarea,
   Title,
 } from '@mantine/core';
-import { IconArrowUpRight, IconSearch } from '@tabler/icons-react';
-import { useMemo, useState } from 'react';
-import { adminUi as AU } from '../../theme';
+import { useState } from 'react';
+import { useApi } from '../../hooks/useApi';
+import { usePagination } from '../../hooks/usePagination';
+import { adminService, type ResolveDisputeData } from '../../api/services/admin.service';
+import type { Booking, DeliveryRequest } from '../../api/types';
+import { notify } from '../../utils/notify';
+import { formatDateTime, populatedName } from './adminHelpers';
 
-type Dispute = {
-  id: string;
-  user: string;
-  avatar: string;
-  type: string;
-  status: 'Open' | 'Pending' | 'Resolved';
-  priority: 'High' | 'Medium' | 'Low';
-  date: string;
-};
-
-const ROWS: Dispute[] = [
-  {
-    id: 'DSP-20441',
-    user: 'Maya Thompson',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=96&q=70',
-    type: 'Delivery delay',
-    status: 'Open',
-    priority: 'High',
-    date: '2026-05-04',
-  },
-  {
-    id: 'DSP-20418',
-    user: 'James Okoro',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=96&q=70',
-    type: 'Item condition',
-    status: 'Pending',
-    priority: 'Medium',
-    date: '2026-05-03',
-  },
-  {
-    id: 'DSP-20390',
-    user: 'Elena Rossi',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=96&q=70',
-    type: 'Payout dispute',
-    status: 'Resolved',
-    priority: 'Low',
-    date: '2026-05-01',
-  },
-  {
-    id: 'DSP-20355',
-    user: 'Chris Park',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=96&q=70',
-    type: 'Verification',
-    status: 'Open',
-    priority: 'Medium',
-    date: '2026-04-30',
-  },
-];
-
-function statusBadge(s: Dispute['status']) {
-  if (s === 'Resolved')
-    return (
-      <Badge color="green" variant="light" size="sm">
-        Resolved
-      </Badge>
-    );
-  if (s === 'Pending')
-    return (
-      <Badge color="orange" variant="light" size="sm">
-        Pending
-      </Badge>
-    );
-  return (
-    <Badge color="blue" variant="light" size="sm">
-      Open
-    </Badge>
-  );
+function disputeTypeLabel(b: Booking): string {
+  const req = typeof b.requestId === 'object' && b.requestId && 'type' in b.requestId ? (b.requestId as DeliveryRequest) : null;
+  return req?.type === 'support' ? 'Support' : 'Standard';
 }
 
-function priorityBadge(p: Dispute['priority']) {
-  const c = p === 'High' ? 'red' : p === 'Medium' ? 'yellow' : 'gray';
-  return (
-    <Badge color={c} variant="outline" size="sm">
-      {p}
-    </Badge>
-  );
+function priorityFromAge(raisedAt: string | null | undefined): { label: string; color: string } {
+  if (!raisedAt) return { label: 'Pending', color: 'yellow' };
+  const days = (Date.now() - new Date(raisedAt).getTime()) / 86400000;
+  if (days < 1) return { label: 'Urgent', color: 'red' };
+  if (days <= 3) return { label: 'Pending', color: 'yellow' };
+  return { label: 'Overdue', color: 'gray' };
 }
 
 export function AdminDisputesPage() {
-  const [selectedId, setSelectedId] = useState(ROWS[0]!.id);
-  const [q, setQ] = useState('');
-  const [statusF, setStatusF] = useState<string | null>('all');
-  const [priorityF, setPriorityF] = useState<string | null>('all');
-
-  const selected = useMemo(() => ROWS.find((r) => r.id === selectedId) ?? ROWS[0]!, [selectedId]);
-
-  const filtered = useMemo(
-    () =>
-      ROWS.filter((r) => {
-        const matchQ =
-          !q.trim() ||
-          r.id.toLowerCase().includes(q.toLowerCase()) ||
-          r.user.toLowerCase().includes(q.toLowerCase());
-        const matchS = !statusF || statusF === 'all' || r.status === statusF;
-        const matchP = !priorityF || priorityF === 'all' || r.priority === priorityF;
-        return matchQ && matchS && matchP;
-      }),
-    [q, statusF, priorityF],
+  const { page, limit, setPage } = usePagination(20);
+  const { data, isLoading, error, refetch } = useApi(
+    () => adminService.getDisputes({ page, limit }),
+    [page, limit],
   );
+
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
+  const [resolution, setResolution] = useState<ResolveDisputeData['resolution']>('no_action');
+  const [refundAmount, setRefundAmount] = useState<number | ''>('');
+  const [notes, setNotes] = useState('');
+
+  const openResolve = (b: Booking) => {
+    setActiveBooking(b);
+    setResolution('no_action');
+    setRefundAmount('');
+    setNotes('');
+    setResolveOpen(true);
+  };
+
+  const submitResolve = async () => {
+    if (!activeBooking || !notes.trim()) {
+      notify.error('Notes are required');
+      return;
+    }
+    if (resolution === 'partial_refund' && (refundAmount === '' || refundAmount == null)) {
+      notify.error('Refund amount required for partial refund');
+      return;
+    }
+    try {
+      const payload: ResolveDisputeData = {
+        resolution,
+        notes: notes.trim(),
+        ...(resolution === 'partial_refund' ? { refundAmount: Number(refundAmount) } : {}),
+        ...(resolution === 'refund_requester' && refundAmount !== '' && refundAmount != null
+          ? { refundAmount: Number(refundAmount) }
+          : {}),
+      };
+      await adminService.resolveDispute(activeBooking._id, payload);
+      notify.success('Dispute resolved');
+      setResolveOpen(false);
+      setActiveBooking(null);
+      void refetch();
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const rows = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
 
   return (
     <Stack gap="lg">
@@ -124,165 +94,112 @@ export function AdminDisputesPage() {
           Dispute management
         </Title>
         <Text fz={14} c="dimmed" mt={4}>
-          Triage booking issues, message both parties, and close with an auditable trail.
+          Open disputes are sorted oldest first. Resolve with an auditable resolution.
         </Text>
       </div>
 
-      <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }} spacing="md">
-        {[
-          { t: 'Total disputes', v: '186', h: 'All time' },
-          { t: 'Open disputes', v: '22', h: 'Awaiting first response' },
-          { t: 'Resolved disputes', v: '141', h: 'Last 90 days' },
-          { t: 'Avg resolution time', v: '4h 32m', h: 'Median across closed cases' },
-        ].map((c) => (
-          <Paper key={c.t} p="lg" radius="md" withBorder shadow="xs" bg="#fff">
-            <Text fz={12} fw={700} tt="uppercase" c="dimmed" mb={6}>
-              {c.t}
-            </Text>
-            <Text fz={26} fw={800}>
-              {c.v}
-            </Text>
-            <Text fz={12} c="dimmed" mt={4}>
-              {c.h}
-            </Text>
-          </Paper>
-        ))}
-      </SimpleGrid>
+      {error ? (
+        <Text c="red" fz={14}>
+          {error}
+        </Text>
+      ) : null}
 
-      <Grid gap="md">
-        <Grid.Col span={{ base: 12, lg: 8 }}>
-          <Paper p="md" radius="md" withBorder shadow="xs" bg="#fff">
-            <Group gap="sm" mb="md" wrap="wrap">
-              <TextInput
-                placeholder="Search ID or user…"
-                leftSection={<IconSearch size={16} stroke={1.5} />}
-                style={{ flex: '1 1 200px' }}
-                value={q}
-                onChange={(e) => setQ(e.currentTarget.value)}
-              />
-              <Select
-                placeholder="Status"
-                data={[
-                  { value: 'all', label: 'All statuses' },
-                  { value: 'Open', label: 'Open' },
-                  { value: 'Pending', label: 'Pending' },
-                  { value: 'Resolved', label: 'Resolved' },
-                ]}
-                value={statusF}
-                onChange={setStatusF}
-                w={{ base: '100%', sm: 160 }}
-              />
-              <Select
-                placeholder="Priority"
-                data={[
-                  { value: 'all', label: 'All priorities' },
-                  { value: 'High', label: 'High' },
-                  { value: 'Medium', label: 'Medium' },
-                  { value: 'Low', label: 'Low' },
-                ]}
-                value={priorityF}
-                onChange={setPriorityF}
-                w={{ base: '100%', sm: 160 }}
-              />
-            </Group>
-            <Table striped highlightOnHover verticalSpacing="sm">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Dispute ID
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    User
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Type
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Status
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Priority
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Date
-                  </Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {filtered.map((row) => (
-                  <Table.Tr
-                    key={row.id}
-                    onClick={() => setSelectedId(row.id)}
-                    style={{
-                      cursor: 'pointer',
-                      background: selectedId === row.id ? `${AU.accentTeal}12` : undefined,
-                    }}
-                  >
-                    <Table.Td fz={13} fw={700}>
-                      {row.id}
+      <Paper radius="md" withBorder shadow="xs" bg="#fff" p={0}>
+        {isLoading ? (
+          <Stack p="lg" gap="sm">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} height={40} />
+            ))}
+          </Stack>
+        ) : rows.length === 0 ? (
+          <Text p="xl" c="dimmed" ta="center">
+            No disputes in the queue.
+          </Text>
+        ) : (
+          <Table striped highlightOnHover verticalSpacing="sm">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Ref</Table.Th>
+                <Table.Th>Requester</Table.Th>
+                <Table.Th>Traveler</Table.Th>
+                <Table.Th>Type</Table.Th>
+                <Table.Th>Reason</Table.Th>
+                <Table.Th>Raised</Table.Th>
+                <Table.Th>Priority</Table.Th>
+                <Table.Th />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map((b: Booking) => {
+                const pr = priorityFromAge(b.disputeRaisedAt);
+                const reason = (b.disputeReason ?? '').slice(0, 60) + ((b.disputeReason?.length ?? 0) > 60 ? '…' : '');
+                return (
+                  <Table.Tr key={b._id}>
+                    <Table.Td fw={700}>{b.bookingRef}</Table.Td>
+                    <Table.Td fz={13}>{populatedName(b.requesterId)}</Table.Td>
+                    <Table.Td fz={13}>{populatedName(b.travelerId)}</Table.Td>
+                    <Table.Td fz={13}>{disputeTypeLabel(b)}</Table.Td>
+                    <Table.Td fz={13} maw={280}>
+                      {reason || '—'}
+                    </Table.Td>
+                    <Table.Td fz={13} c="dimmed">
+                      {formatDateTime(b.disputeRaisedAt)}
                     </Table.Td>
                     <Table.Td>
-                      <Group gap="sm" wrap="nowrap">
-                        <Avatar src={row.avatar} size={32} radius="xl" />
-                        <Text fz={13}>{row.user}</Text>
-                      </Group>
+                      <Badge color={pr.color} variant="light" size="sm">
+                        {pr.label}
+                      </Badge>
                     </Table.Td>
-                    <Table.Td fz={13}>{row.type}</Table.Td>
-                    <Table.Td>{statusBadge(row.status)}</Table.Td>
-                    <Table.Td>{priorityBadge(row.priority)}</Table.Td>
-                    <Table.Td fz={13} c="dimmed">
-                      {row.date}
+                    <Table.Td>
+                      <Button size="xs" variant="light" onClick={() => openResolve(b)}>
+                        Resolve
+                      </Button>
                     </Table.Td>
                   </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Paper>
-        </Grid.Col>
+                );
+              })}
+            </Table.Tbody>
+          </Table>
+        )}
+        {!isLoading && rows.length > 0 ? (
+          <Group justify="center" py="md">
+            <Pagination total={totalPages} value={page} onChange={setPage} size="sm" />
+          </Group>
+        ) : null}
+      </Paper>
 
-        <Grid.Col span={{ base: 12, lg: 4 }}>
-          <Paper p="lg" radius="md" withBorder shadow="xs" bg="#fff" style={{ position: 'sticky', top: 88 }}>
-            <Group justify="space-between" mb="md">
-              <Text fw={800} fz={16}>
-                {selected.id}
-              </Text>
-              {statusBadge(selected.status)}
-            </Group>
-            <Text fz={13} c="dimmed" mb="lg">
-              {selected.type} · opened {selected.date}
-            </Text>
-            <Text fz={12} fw={700} tt="uppercase" c="dimmed" mb="sm">
-              Communication log
-            </Text>
-            <Stack gap="sm" mb="lg">
-              {[
-                { who: 'User', text: 'Package arrived with visible corner damage on the retail box.' },
-                { who: 'Traveler', text: 'Photos at handoff showed sealed packaging; happy to share EXIF metadata.' },
-                { who: 'Support', text: 'Requested item photos from both parties within 24h.' },
-              ].map((m, i) => (
-                <Paper key={i} p="sm" radius="md" bg={AU.pageBg}>
-                  <Text fz={11} fw={700} c="dimmed" mb={4}>
-                    {m.who}
-                  </Text>
-                  <Text fz={13}>{m.text}</Text>
-                </Paper>
-              ))}
+      <Modal opened={resolveOpen} onClose={() => setResolveOpen(false)} title="Resolve dispute" size="md">
+        <Stack gap="md">
+          <Text fz={13} c="dimmed">
+            Booking {activeBooking?.bookingRef}
+          </Text>
+          <Radio.Group
+            label="Resolution"
+            value={resolution}
+            onChange={(v) => setResolution(v as ResolveDisputeData['resolution'])}
+          >
+            <Stack gap="xs" mt={4}>
+              <Radio value="refund_requester" label="Refund requester" />
+              <Radio value="release_traveler" label="Release to traveler" />
+              <Radio value="partial_refund" label="Partial refund" />
+              <Radio value="no_action" label="No action" />
             </Stack>
-            <Stack gap="xs">
-              <Button fullWidth radius="md" leftSection={<IconArrowUpRight size={16} />} {...tealBtn}>
-                Resolve dispute
-              </Button>
-              <Button fullWidth radius="md" variant="outline" color="orange">
-                Escalate
-              </Button>
-            </Stack>
-          </Paper>
-        </Grid.Col>
-      </Grid>
+          </Radio.Group>
+          {resolution === 'partial_refund' ? (
+            <NumberInput label="Refund amount" value={refundAmount === '' ? undefined : refundAmount} onChange={(v) => setRefundAmount(typeof v === 'number' ? v : '')} min={0} />
+          ) : null}
+          {resolution === 'refund_requester' ? (
+            <NumberInput
+              label="Optional explicit refund amount (defaults to agreed/counter/offered fee)"
+              value={refundAmount === '' ? undefined : refundAmount}
+              onChange={(v) => setRefundAmount(typeof v === 'number' ? v : '')}
+              min={0}
+            />
+          ) : null}
+          <Textarea label="Notes" required placeholder="Required audit notes" value={notes} onChange={(e) => setNotes(e.currentTarget.value)} minRows={3} />
+          <Button onClick={() => void submitResolve()}>Submit resolution</Button>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
-
-const tealBtn = {
-  styles: { root: { backgroundColor: AU.accentTeal, border: 'none', color: '#fff' } },
-} as const;

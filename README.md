@@ -1,74 +1,55 @@
-# React + TypeScript + Vite
+# Tohdah Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React client for the Tohdah peer-to-peer delivery marketplace.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **React 19** with **TypeScript**
+- **Vite** for dev and production builds
+- **Mantine 9** (UI, notifications, forms)
+- **React Router** for routing
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Copy environment defaults and adjust API URL:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cp .env.example .env
 ```
-# tohdah-frontend
+
+Set `VITE_API_BASE_URL` to your backend origin (e.g. `http://localhost:3000`).
+
+```bash
+npm run dev
+```
+
+## Environment variables
+
+| Variable              | Description                          |
+|-----------------------|--------------------------------------|
+| `VITE_API_BASE_URL`   | Base URL of the NestJS API (no trailing slash required) |
+
+## Scripts
+
+| Command        | Description                    |
+|----------------|--------------------------------|
+| `npm run dev`  | Start Vite dev server          |
+| `npm run build`| Typecheck + production build   |
+| `npm run preview` | Serve the built `dist` folder |
+
+## Auth flow (summary)
+
+1. **Register / login** stores access + refresh tokens (`api/client.ts`).
+2. **`AuthProvider`** loads `/auth/me` after login and on refresh; normalizes `role`, `accountStatus`, loyalty fields.
+3. **Protected routes** require authentication; onboarding redirects until `onboardingCompleted` and `accountType` are set.
+4. **Token refresh** runs on `401` from the API client when a refresh token exists.
+5. **Admin** routes expect a user with `role` `admin` or `superadmin` and a valid admin session.
+
+## API and testing docs
+
+- Backend contract and integration notes: [`../tohdah-backend/API_INTEGRATION.md`](../tohdah-backend/API_INTEGRATION.md)
+- Manual end-to-end journeys: [`E2E_TESTING_GUIDE.md`](./E2E_TESTING_GUIDE.md)

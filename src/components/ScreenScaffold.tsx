@@ -1,5 +1,5 @@
-import { Box, Button, type ButtonProps, Group, Paper, Stack, Text, Title } from '@mantine/core';
-import type { ReactNode } from 'react';
+import { Box, Button, Group, Paper, Stack, Text, Title, type ButtonProps } from '@mantine/core';
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { colors } from '../theme';
 
 type ScreenScaffoldProps = {
@@ -42,7 +42,9 @@ export function ScreenScaffold({
   );
 }
 
-export function PrimaryGradientButton({ children, ...rest }: ButtonProps) {
+type PrimaryGradientButtonProps = ButtonProps & ButtonHTMLAttributes<HTMLButtonElement>;
+
+export function PrimaryGradientButton({ children, ...rest }: PrimaryGradientButtonProps) {
   return (
     <Button
       {...rest}

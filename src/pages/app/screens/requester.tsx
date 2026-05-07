@@ -1,59 +1,54 @@
 import {
   ActionIcon,
   Affix,
-  Anchor,
-  Avatar,
   Badge,
   Box,
   Button,
-  Checkbox,
   Divider,
-  FileInput,
   Grid,
   Group,
-  Image,
-  Menu,
   Modal,
   NumberInput,
   Pagination,
   Paper,
+  Select,
   SimpleGrid,
+  Skeleton,
   Stack,
-  Table,
   Tabs,
   Text,
   Textarea,
   TextInput,
   Timeline,
-  TimelineItem,
   Title,
   UnstyledButton,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
-import {
-  IconBasket,
-  IconCheck,
-  IconDotsVertical,
-  IconMapPin,
-  IconPackage,
-  IconPhotoUp,
-  IconPlus,
-  IconSend,
-  IconStar,
-} from '@tabler/icons-react';
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { colors, marketplaceUi as MU, requesterUi as RQ } from '../../../theme';
-import { PageIntro, ShellCard, StatusBadge } from './shared';
+import { useForm } from '@mantine/form';
+import { IconBasket, IconMapPin, IconPackage, IconPlus } from '@tabler/icons-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import type { DeliveryRequest, Trip } from '../../../api/types';
+import { ApiRequestError } from '../../../api/client';
+import { bookingsService } from '../../../api/services/bookings.service';
+import type { CreateRequestData } from '../../../api/services/requests.service';
+import { requestsService } from '../../../api/services/requests.service';
+import { tripsService } from '../../../api/services/trips.service';
+import { useApi } from '../../../hooks/useApi';
+import { usePagination } from '../../../hooks/usePagination';
+import { notify } from '../../../utils/notify';
+import { colors, requesterUi as RQ } from '../../../theme';
+import { ShellCard } from './shared';
 
 function OrderSummaryPanel({
   variant,
   title,
   lines,
+  estimate,
 }: {
   variant: 'standard' | 'community';
   title: string;
   lines: { label: string; value: string }[];
+  estimate: string;
 }) {
   const headerBg = variant === 'standard' ? RQ.standardBlue : RQ.communityMint;
   return (
@@ -78,7 +73,7 @@ function OrderSummaryPanel({
         <Group justify="space-between">
           <Text fw={700}>Estimated total</Text>
           <Text fw={800} fz={18} c={headerBg}>
-            $88.50
+            {estimate}
           </Text>
         </Group>
       </Stack>
@@ -202,11 +197,65 @@ export function RequesterSelectTypePage() {
 }
 
 export function RequesterPostSupportPage() {
+  const navigate = useNavigate();
+  const form = useForm({
+    initialValues: {
+      itemName: '',
+      itemDescription: '',
+      origin: '',
+      destination: '',
+      deliveryDeadline: '',
+      budget: 0,
+      beneficiaryName: '',
+      beneficiaryType: '' as '' | 'elderly' | 'limited_mobility' | 'essential_care' | 'community' | 'urgent',
+      paymentType: 'reduced' as 'full' | 'reduced' | 'sponsored' | 'volunteer',
+      supportingNotes: '',
+    },
+    validate: {
+      itemName: (v) => (v.trim().length ? null : 'Required'),
+      itemDescription: (v) => (v.trim().length ? null : 'Required'),
+      origin: (v) => (v.trim().length ? null : 'Required'),
+      destination: (v) => (v.trim().length ? null : 'Required'),
+      deliveryDeadline: (v) => (v ? null : 'Required'),
+    },
+  });
+
+  const submit = async (values: typeof form.values) => {
+    try {
+      const body: CreateRequestData = {
+        type: 'support',
+        itemName: values.itemName.trim(),
+        itemDescription: values.itemDescription.trim(),
+        itemCategory: 'other',
+        itemSize: 'medium',
+        origin: values.origin.trim(),
+        destination: values.destination.trim(),
+        deliveryDeadline: new Date(values.deliveryDeadline).toISOString(),
+        budget: values.budget > 0 ? values.budget : undefined,
+        currency: 'USD',
+        paymentType: values.paymentType,
+        beneficiaryName: values.beneficiaryName.trim() || undefined,
+        beneficiaryType: values.beneficiaryType || undefined,
+        urgencyLevel: 'medium',
+        supportingNotes: values.supportingNotes.trim() || undefined,
+      };
+      await requestsService.create(body);
+      notify.success('Support request posted');
+      navigate('/app/requester/requests');
+    } catch (e) {
+      notify.error(e instanceof ApiRequestError ? e.message : 'Could not create request');
+    }
+  };
+
+  const estimate =
+    form.values.budget > 0
+      ? new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(form.values.budget)
+      : 'Set budget';
+
   const summaryLines = [
-    { label: 'Category', value: 'Community support' },
-    { label: 'Pickup', value: 'Whole Foods · Chelsea' },
-    { label: 'Drop-off', value: 'Home · SW3' },
-    { label: 'Window', value: 'Today · 4–6 PM' },
+    { label: 'Pickup area', value: form.values.origin || '—' },
+    { label: 'Drop-off', value: form.values.destination || '—' },
+    { label: 'Deadline', value: form.values.deliveryDeadline || '—' },
   ];
 
   return (
@@ -216,47 +265,54 @@ export function RequesterPostSupportPage() {
           Post support request
         </Title>
         <Text fz={15} c={colors.mutedText} mt={6}>
-          Request grocery or essential runs from verified community travelers.
+          Request essential deliveries from verified travelers.
         </Text>
       </Box>
 
       <Grid gap="lg">
         <Grid.Col span={{ base: 12, md: 7 }}>
-          <Paper radius="md" p="lg" withBorder shadow="xs">
+          <Paper radius="md" p="lg" withBorder shadow="xs" component="form" onSubmit={form.onSubmit(submit)}>
             <Stack gap="md">
-              <TextInput label="Item name" placeholder="e.g. Weekly groceries" required />
-              <TextInput
-                label="Delivery from"
-                placeholder="Store or pickup address"
-                leftSection={<IconMapPin size={16} />}
-                required
-              />
-              <TextInput
-                label="Delivery to"
-                placeholder="Your address"
-                leftSection={<IconMapPin size={16} />}
-                required
-              />
+              <TextInput label="Item name" {...form.getInputProps('itemName')} />
+              <Textarea label="Description" minRows={2} {...form.getInputProps('itemDescription')} />
+              <TextInput label="Pickup / origin" leftSection={<IconMapPin size={16} />} {...form.getInputProps('origin')} />
+              <TextInput label="Drop-off / destination" leftSection={<IconMapPin size={16} />} {...form.getInputProps('destination')} />
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                <TextInput label="Preferred date" type="date" required />
-                <TextInput label="Time window" placeholder="4:00 PM – 6:00 PM" />
+                <TextInput label="Deliver by (date)" type="date" {...form.getInputProps('deliveryDeadline')} />
+                <NumberInput label="Budget (USD)" min={0} {...form.getInputProps('budget')} />
               </SimpleGrid>
+              <Select
+                label="Payment type"
+                data={[
+                  { value: 'reduced', label: 'Reduced fee' },
+                  { value: 'full', label: 'Full fee' },
+                  { value: 'sponsored', label: 'Sponsored' },
+                  { value: 'volunteer', label: 'Volunteer' },
+                ]}
+                {...form.getInputProps('paymentType')}
+              />
+              <TextInput label="Beneficiary name (optional)" {...form.getInputProps('beneficiaryName')} />
+              <Select
+                label="Beneficiary type"
+                clearable
+                data={[
+                  { value: 'elderly', label: 'Elderly' },
+                  { value: 'limited_mobility', label: 'Limited mobility' },
+                  { value: 'essential_care', label: 'Essential care' },
+                  { value: 'community', label: 'Community' },
+                  { value: 'urgent', label: 'Urgent' },
+                ]}
+                {...form.getInputProps('beneficiaryType')}
+              />
+              <Textarea label="Supporting notes" {...form.getInputProps('supportingNotes')} />
+              <Button type="submit" styles={{ root: { background: RQ.communityMint } }}>
+                Submit request
+              </Button>
             </Stack>
           </Paper>
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 5 }}>
-          <OrderSummaryPanel variant="community" title="Order summary" lines={summaryLines} />
-          <Button
-            component={Link}
-            to="/app/requester/requests/review"
-            fullWidth
-            mt="md"
-            size="md"
-            radius="md"
-            styles={{ root: { background: RQ.standardBlue } }}
-          >
-            Post support request
-          </Button>
+          <OrderSummaryPanel variant="community" title="Live summary" lines={summaryLines} estimate={estimate} />
         </Grid.Col>
       </Grid>
     </Stack>
@@ -264,739 +320,475 @@ export function RequesterPostSupportPage() {
 }
 
 export function RequesterPostDeliveryPage() {
+  const navigate = useNavigate();
+  const form = useForm({
+    initialValues: {
+      itemName: '',
+      itemDescription: '',
+      itemCategory: 'electronics' as CreateRequestData['itemCategory'],
+      itemSize: 'medium' as CreateRequestData['itemSize'],
+      origin: '',
+      destination: '',
+      deliveryDeadline: '',
+      budget: 0,
+      urgencyLevel: 'medium' as NonNullable<CreateRequestData['urgencyLevel']>,
+    },
+    validate: {
+      itemName: (v) => (v.trim().length ? null : 'Required'),
+      itemDescription: (v) => (v.trim().length ? null : 'Required'),
+      origin: (v) => (v.trim().length ? null : 'Required'),
+      destination: (v) => (v.trim().length ? null : 'Required'),
+      deliveryDeadline: (v) => (v ? null : 'Required'),
+    },
+  });
+
+  const submit = async (values: typeof form.values) => {
+    try {
+      const body: CreateRequestData = {
+        type: 'standard',
+        itemName: values.itemName.trim(),
+        itemDescription: values.itemDescription.trim(),
+        itemCategory: values.itemCategory,
+        itemSize: values.itemSize,
+        origin: values.origin.trim(),
+        destination: values.destination.trim(),
+        deliveryDeadline: new Date(values.deliveryDeadline).toISOString(),
+        budget: values.budget > 0 ? values.budget : undefined,
+        currency: 'USD',
+        urgencyLevel: values.urgencyLevel,
+      };
+      await requestsService.create(body);
+      notify.success('Request posted');
+      navigate('/app/requester/requests');
+    } catch (e) {
+      notify.error(e instanceof ApiRequestError ? e.message : 'Could not create request');
+    }
+  };
+
+  const estimate =
+    form.values.budget > 0
+      ? new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(form.values.budget)
+      : '—';
+
   const summaryLines = [
-    { label: 'Item', value: 'Laptop sleeve' },
-    { label: 'Route', value: 'JFK → CDG' },
-    { label: 'Weight', value: '1.8 kg' },
-    { label: 'Dims (L×W×H)', value: '40 × 30 × 8 cm' },
+    { label: 'Item', value: form.values.itemName || '—' },
+    { label: 'Route', value: `${form.values.origin || '—'} → ${form.values.destination || '—'}` },
+    { label: 'Size', value: form.values.itemSize },
   ];
 
   return (
     <Stack gap="lg" pb={48}>
-      <Box>
-        <Title order={2} fz={26} fw={700} c={colors.navyDeep}>
-          Post delivery request
-        </Title>
-        <Text fz={15} c={colors.mutedText} mt={6}>
-          Describe your parcel so travelers can gauge fit and price accurately.
-        </Text>
-      </Box>
-
+      <Title order={2} fz={26} fw={700} c={colors.navyDeep}>
+        Post standard request
+      </Title>
       <Grid gap="lg">
         <Grid.Col span={{ base: 12, md: 7 }}>
-          <Paper radius="md" p="lg" withBorder shadow="xs">
+          <Paper radius="md" p="lg" withBorder component="form" onSubmit={form.onSubmit(submit)}>
             <Stack gap="md">
-              <FileInput
-                label="Upload image"
-                placeholder="Click to upload parcel photo"
-                accept="image/*"
-                clearable
-                leftSection={<IconPhotoUp size={18} />}
+              <TextInput label="Item name" {...form.getInputProps('itemName')} />
+              <Textarea label="Description" {...form.getInputProps('itemDescription')} />
+              <Select
+                label="Category"
+                data={[
+                  { value: 'documents', label: 'Documents' },
+                  { value: 'electronics', label: 'Electronics' },
+                  { value: 'clothing', label: 'Clothing' },
+                  { value: 'food', label: 'Food' },
+                  { value: 'gifts', label: 'Gifts' },
+                  { value: 'other', label: 'Other' },
+                ]}
+                {...form.getInputProps('itemCategory')}
               />
-              <TextInput label="Item title" placeholder="Brief name" required />
-              <SimpleGrid cols={3} spacing="sm">
-                <NumberInput label="Length (cm)" min={1} defaultValue={40} />
-                <NumberInput label="Width (cm)" min={1} defaultValue={30} />
-                <NumberInput label="Height (cm)" min={1} defaultValue={8} />
-              </SimpleGrid>
-              <NumberInput label="Weight (kg)" min={0.1} step={0.1} defaultValue={1.8} decimalScale={1} />
-              <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                <TextInput label="Pickup city" placeholder="Airport / city" required />
-                <TextInput label="Destination city" required />
-              </SimpleGrid>
+              <Select
+                label="Size"
+                data={[
+                  { value: 'small', label: 'Small' },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'large', label: 'Large' },
+                ]}
+                {...form.getInputProps('itemSize')}
+              />
+              <TextInput label="Origin" {...form.getInputProps('origin')} />
+              <TextInput label="Destination" {...form.getInputProps('destination')} />
+              <TextInput label="Deliver by" type="date" {...form.getInputProps('deliveryDeadline')} />
+              <NumberInput label="Budget (USD)" min={0} {...form.getInputProps('budget')} />
+              <Select
+                label="Urgency"
+                data={[
+                  { value: 'low', label: 'Low' },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'high', label: 'High' },
+                  { value: 'critical', label: 'Critical' },
+                ]}
+                {...form.getInputProps('urgencyLevel')}
+              />
+              <Button type="submit" styles={{ root: { background: RQ.standardBlue } }}>
+                Submit request
+              </Button>
             </Stack>
           </Paper>
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 5 }}>
-          <OrderSummaryPanel variant="standard" title="Order summary" lines={summaryLines} />
-          <Button
-            component={Link}
-            to="/app/requester/requests/review"
-            fullWidth
-            mt="md"
-            size="md"
-            radius="md"
-            styles={{ root: { background: RQ.standardBlue } }}
-          >
-            Post delivery request
-          </Button>
+          <OrderSummaryPanel variant="standard" title="Summary" lines={summaryLines} estimate={estimate} />
         </Grid.Col>
       </Grid>
     </Stack>
-  );
-}
-
-function CitySkylineFooter() {
-  return (
-    <Box
-      mt="lg"
-      h={100}
-      style={{
-        borderRadius: 12,
-        background: `linear-gradient(180deg, #dbe7f5 0%, ${colors.navyDeep} 100%)`,
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      <svg viewBox="0 0 400 80" preserveAspectRatio="none" width="100%" height="100%" style={{ display: 'block' }}>
-        <rect x="0" y="40" width="40" height="40" fill="rgba(255,255,255,0.15)" />
-        <rect x="50" y="25" width="35" height="55" fill="rgba(255,255,255,0.12)" />
-        <rect x="95" y="35" width="45" height="45" fill="rgba(255,255,255,0.18)" />
-        <rect x="150" y="20" width="30" height="60" fill="rgba(255,255,255,0.14)" />
-        <rect x="190" y="45" width="55" height="35" fill="rgba(255,255,255,0.1)" />
-        <rect x="255" y="30" width="40" height="50" fill="rgba(255,255,255,0.16)" />
-        <rect x="305" y="38" width="50" height="42" fill="rgba(255,255,255,0.11)" />
-        <rect x="365" y="48" width="35" height="32" fill="rgba(255,255,255,0.13)" />
-      </svg>
-    </Box>
   );
 }
 
 export function RequesterReviewRequestPage() {
   return (
-    <Box
-      style={{
-        background: RQ.pageGray,
-        margin: 'calc(-1 * var(--mantine-spacing-md))',
-        padding: 'var(--mantine-spacing-xl) var(--mantine-spacing-md)',
-        minHeight: 'calc(100vh - 120px)',
-      }}
-    >
-      <Paper maw={520} mx="auto" p="xl" radius="lg" shadow="md">
-        <Title order={3} ta="center" fz={20} c={colors.navyDeep}>
-          Review your request
-        </Title>
-        <Text ta="center" fz={14} c={colors.mutedText} mt="xs" mb="lg">
-          Confirm pickup, drop-off, and pricing before posting.
-        </Text>
-        <Stack gap="sm">
-          <Group justify="space-between">
-            <Text fz={14} c={colors.mutedText}>
-              Item
-            </Text>
-            <Text fw={600}>Laptop sleeve · 1.8 kg</Text>
-          </Group>
-          <Group justify="space-between">
-            <Text fz={14} c={colors.mutedText}>
-              Pickup
-            </Text>
-            <Text fw={600}>JFK area</Text>
-          </Group>
-          <Group justify="space-between">
-            <Text fz={14} c={colors.mutedText}>
-              Drop-off
-            </Text>
-            <Text fw={600}>Paris (CDG)</Text>
-          </Group>
-          <Divider />
-          <Group justify="space-between">
-            <Text fw={700}>Total</Text>
-            <Text fw={800} fz={22} c={RQ.standardBlue}>
-              $186.00
-            </Text>
-          </Group>
-        </Stack>
-        <CitySkylineFooter />
-        <Button
-          component={Link}
-          to="/app/requester/requests"
-          fullWidth
-          mt="xl"
-          size="md"
-          radius="md"
-          styles={{ root: { background: RQ.standardBlue } }}
-        >
-          Post request
-        </Button>
-      </Paper>
-    </Box>
-  );
-}
-
-const requestRows = [
-  {
-    id: 'RQ-1092',
-    item: 'Laptop sleeve',
-    status: 'In Progress' as const,
-    date: 'May 2, 2026',
-  },
-  {
-    id: 'RQ-1088',
-    item: 'Gift box',
-    status: 'Pending' as const,
-    date: 'Apr 28, 2026',
-  },
-  {
-    id: 'RQ-1042',
-    item: 'Documents',
-    status: 'Completed' as const,
-    date: 'Mar 11, 2026',
-  },
-  {
-    id: 'RQ-0991',
-    item: 'Fragile ceramics',
-    status: 'Cancelled' as const,
-    date: 'Feb 02, 2026',
-  },
-];
-
-export function RequesterRequestsListPage() {
-  return (
-    <Stack gap="lg" pb={48}>
-      <PageIntro
-        title="My requests"
-        subtitle="Track status, dates, and next actions for every request."
-        actions={
-          <Button
-            component={Link}
-            to="/app/requester/select-type"
-            leftSection={<IconPackage size={16} />}
-            radius="md"
-            styles={{ root: { background: RQ.standardBlue } }}
-          >
-            New request
-          </Button>
-        }
-      />
-
-      <TabsRequestTable />
+    <Stack>
+      <Text>You review requests on the detail page after posting.</Text>
+      <Button component={Link} to="/app/requester/requests">
+        Go to my requests
+      </Button>
     </Stack>
   );
 }
 
-function TabsRequestTable() {
-  const [tab, setTab] = useState<string | null>('active');
+function statusTab(s: string): DeliveryRequest['status'] | undefined {
+  if (s === 'all') return undefined;
+  return s as DeliveryRequest['status'];
+}
 
-  const filter = (s: string) => {
-    if (s === 'active') return requestRows.filter((r) => r.status === 'In Progress' || r.status === 'Pending');
-    if (s === 'completed') return requestRows.filter((r) => r.status === 'Completed');
-    return requestRows.filter((r) => r.status === 'Cancelled');
-  };
+export function RequesterRequestsListPage() {
+  const navigate = useNavigate();
+  const [tab, setTab] = useState('all');
+  const { page, limit, setPage } = usePagination(10);
+
+  const st = statusTab(tab);
+
+  const { data, isLoading } = useApi(
+    () =>
+      requestsService.getMy({
+        status: st,
+        page,
+        limit,
+      }),
+    [tab, page, limit],
+  );
+
+  const rows = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
 
   return (
-    <ShellCard>
-      <Tabs value={tab} onChange={setTab}>
+    <Stack gap="lg" pb={48}>
+      <Title order={2}>My requests</Title>
+      <Tabs value={tab} onChange={(v) => { setTab(v ?? 'all'); setPage(1); }}>
         <Tabs.List>
-          <Tabs.Tab value="active">Active</Tabs.Tab>
+          <Tabs.Tab value="all">All</Tabs.Tab>
+          <Tabs.Tab value="pending">Pending</Tabs.Tab>
+          <Tabs.Tab value="matched">Matched</Tabs.Tab>
+          <Tabs.Tab value="in_transit">In transit</Tabs.Tab>
           <Tabs.Tab value="completed">Completed</Tabs.Tab>
-          <Tabs.Tab value="cancelled">Cancelled</Tabs.Tab>
         </Tabs.List>
-        <Tabs.Panel value="active" pt="md">
-          <RequestTable rows={filter('active')} />
-        </Tabs.Panel>
-        <Tabs.Panel value="completed" pt="md">
-          <RequestTable rows={filter('completed')} />
-        </Tabs.Panel>
-        <Tabs.Panel value="cancelled" pt="md">
-          <RequestTable rows={filter('cancelled')} />
-        </Tabs.Panel>
       </Tabs>
-    </ShellCard>
+
+      {isLoading ? (
+        <Skeleton height={100} />
+      ) : rows.length === 0 ? (
+        <Text c="dimmed">No requests yet.</Text>
+      ) : (
+        <Stack gap="sm">
+          {rows.map((r: DeliveryRequest) => (
+            <Paper key={r._id} p="md" withBorder>
+              <Group justify="space-between">
+                <div>
+                  <Text fw={700}>{r.itemName}</Text>
+                  <Text fz={13} c="dimmed">
+                    {r.origin} → {r.destination}
+                  </Text>
+                </div>
+                <Badge>{r.status}</Badge>
+                <Button
+                  size="xs"
+                  variant="light"
+                  onClick={() =>
+                    navigate('/app/requester/requests/detail', { state: { requestId: r._id } })
+                  }
+                >
+                  Details
+                </Button>
+              </Group>
+            </Paper>
+          ))}
+        </Stack>
+      )}
+
+      <Pagination value={page} onChange={setPage} total={totalPages} />
+    </Stack>
   );
 }
 
-function RequestTable({
-  rows,
-}: {
-  rows: { id: string; item: string; status: typeof requestRows[number]['status']; date: string }[];
-}) {
-  if (!rows.length) {
-    return (
-      <Text c={colors.mutedText} fz={14}>
-        Nothing in this tab yet.
-      </Text>
-    );
-  }
-
-  return (
-    <Table striped highlightOnHover verticalSpacing="sm">
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>Request ID</Table.Th>
-          <Table.Th>Item name</Table.Th>
-          <Table.Th>Status</Table.Th>
-          <Table.Th>Date</Table.Th>
-          <Table.Th ta="right">Action</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {rows.map((r) => (
-          <Table.Tr key={r.id}>
-            <Table.Td>{r.id}</Table.Td>
-            <Table.Td>
-              <Text fz={14} fw={500}>
-                {r.item}
-              </Text>
-            </Table.Td>
-            <Table.Td>
-              <StatusBadge status={r.status} />
-            </Table.Td>
-            <Table.Td>{r.date}</Table.Td>
-            <Table.Td ta="right">
-              <Menu shadow="md" width={160}>
-                <Menu.Target>
-                  <ActionIcon variant="subtle" color="gray">
-                    <IconDotsVertical size={18} />
-                  </ActionIcon>
-                </Menu.Target>
-                <Menu.Dropdown>
-                  <Menu.Item component={Link} to="/app/requester/requests/detail">
-                    View
-                  </Menu.Item>
-                  <Menu.Item component={Link} to="/app/requester/requests/edit">
-                    Edit
-                  </Menu.Item>
-                  <Menu.Item color="red">Cancel</Menu.Item>
-                </Menu.Dropdown>
-              </Menu>
-            </Table.Td>
-          </Table.Tr>
-        ))}
-      </Table.Tbody>
-    </Table>
-  );
+function requestIdFromLoc(location: ReturnType<typeof useLocation>, sp: URLSearchParams): string | null {
+  const st = location.state as { requestId?: string } | null;
+  if (st?.requestId) return st.requestId;
+  return sp.get('requestId');
 }
 
 export function RequesterRequestDetailPage() {
+  const location = useLocation();
+  const [sp] = useSearchParams();
+  const requestId = requestIdFromLoc(location, sp);
+
+  const { data: req, isLoading } = useApi(
+    () => (requestId ? requestsService.getById(requestId) : Promise.resolve(null)),
+    [requestId],
+  );
+
+  const { data: bookings } = useApi(
+    () => bookingsService.getMy({ role: 'requester', limit: 100 }),
+    [requestId],
+  );
+
+  const booking = useMemo(() => {
+    if (!requestId) return null;
+    return (bookings?.data ?? []).find((b) => {
+      const rid =
+        typeof b.requestId === 'object' && b.requestId && '_id' in b.requestId
+          ? String((b.requestId as DeliveryRequest)._id)
+          : String(b.requestId);
+      return rid === requestId;
+    });
+  }, [bookings, requestId]);
+
+  if (!requestId) return <Text>Missing request.</Text>;
+  if (isLoading || !req) return <Skeleton height={160} />;
+
+  const steps = [
+    { label: 'Posted', done: true },
+    { label: 'Matched', done: ['matched', 'confirmed', 'paid', 'in_transit', 'delivered', 'completed'].includes(req.status) },
+    { label: 'In transit', done: ['in_transit', 'delivered', 'completed'].includes(req.status) },
+    { label: 'Completed', done: req.status === 'completed' },
+  ];
+
   return (
-    <Stack gap="lg" pb={48}>
-      <Group justify="space-between" align="flex-start" wrap="wrap">
-        <Box>
-          <Title order={2} fz={24} c={colors.navyDeep}>
-            Request details
-          </Title>
-          <Text fz={14} c={colors.mutedText} mt={6}>
-            RQ-1092 · Laptop sleeve · JFK → CDG
-          </Text>
-        </Box>
-        <Group>
-          <Button component={Link} to="/app/requester/requests/edit" variant="outline">
-            Edit
-          </Button>
-          <Button component={Link} to="/app/checkout" styles={{ root: { background: RQ.standardBlue } }}>
-            Pay & book
-          </Button>
-        </Group>
-      </Group>
+    <Stack gap="lg">
+      <Title order={2}>{req.itemName}</Title>
+      <Badge>{req.status}</Badge>
+      <Text>
+        {req.origin} → {req.destination}
+      </Text>
 
-      <Grid gap="lg">
-        <Grid.Col span={{ base: 12, md: 5 }}>
-          <Paper radius="md" p="lg" withBorder>
-            <Text fw={700} mb="md">
-              Timeline
-            </Text>
-            <Timeline active={1} bulletSize={26} lineWidth={2}>
-              <TimelineItem bullet={<IconCheck size={14} />} title="Request posted" color="teal">
-                <Text fz={13} c={colors.mutedText}>
-                  May 4, 09:42 AM
-                </Text>
-              </TimelineItem>
-              <TimelineItem bullet={<IconCheck size={14} />} title="Match found" color="blue">
-                <Text fz={13} c={colors.mutedText}>
-                  Aisha K. · $165 offer
-                </Text>
-              </TimelineItem>
-              <TimelineItem title="Picked up" color="gray">
-                <Text fz={13} c={colors.subtleText}>
-                  Pending traveler update
-                </Text>
-              </TimelineItem>
-            </Timeline>
-          </Paper>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 7 }}>
-          <Stack gap="md">
-            <Paper radius="md" p="lg" withBorder>
-              <Group>
-                <Avatar size={56} radius="xl" color="brandTeal">
-                  AK
-                </Avatar>
-                <div>
-                  <Text fw={700} fz={18}>
-                    Aisha K.
-                  </Text>
-                  <Group gap={4}>
-                    <IconStar size={16} fill={RQ.communityMint} color={RQ.communityMint} />
-                    <Text fz={14} fw={600}>
-                      4.9 · 128 trips
-                    </Text>
-                  </Group>
-                </div>
-              </Group>
-            </Paper>
+      <Timeline active={steps.filter((s) => s.done).length - 1} bulletSize={24} lineWidth={2}>
+        {steps.map((s) => (
+          <Timeline.Item key={s.label} title={s.label}>
+            <Text c="dimmed" fz="sm" />
+          </Timeline.Item>
+        ))}
+      </Timeline>
 
-            <Paper radius="md" p="md" withBorder bg={colors.inputBg}>
-              <Text fw={700} fz={14} mb="sm">
-                Chat
-              </Text>
-              <Stack gap="sm">
-                <Paper p="sm" radius="md" withBorder bg="white">
-                  <Text fz={13}>
-                    Hi! I can pick up at T4 Friday morning. Does that work?
-                  </Text>
-                  <Text fz={11} c={colors.subtleText} mt={4}>
-                    Aisha · 10:18 AM
-                  </Text>
-                </Paper>
-                <Group align="flex-end" wrap="nowrap">
-                  <TextInput
-                    placeholder="Type a message…"
-                    style={{ flex: 1 }}
-                    radius="md"
-                  />
-                  <ActionIcon size={36} radius="md" variant="filled" color={RQ.standardBlue}>
-                    <IconSend size={18} />
-                  </ActionIcon>
-                </Group>
-              </Stack>
-            </Paper>
-          </Stack>
-        </Grid.Col>
-      </Grid>
+      {booking ? (
+        <ShellCard>
+          <Text fw={700}>Booking {booking.bookingRef}</Text>
+          <Text fz={13}>Status: {booking.status}</Text>
+          <Button component={Link} to="/app/tracking/live" state={{ bookingId: booking._id }}>
+            Track
+          </Button>
+        </ShellCard>
+      ) : null}
     </Stack>
   );
 }
 
 export function RequesterEditRequestPage() {
-  const [confirmOpen, { open: openConfirm, close: closeConfirm }] = useDisclosure(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [sp] = useSearchParams();
+  const requestId = requestIdFromLoc(location, sp);
+
+  const { data: req, isLoading } = useApi(
+    () => (requestId ? requestsService.getById(requestId) : Promise.resolve(null)),
+    [requestId],
+  );
+
+  const form = useForm({
+    initialValues: {
+      itemName: '',
+      itemDescription: '',
+      origin: '',
+      destination: '',
+      deliveryDeadline: '',
+    },
+  });
+
+  useEffect(() => {
+    if (req) {
+      form.setValues({
+        itemName: req.itemName,
+        itemDescription: req.itemDescription,
+        origin: req.origin,
+        destination: req.destination,
+        deliveryDeadline: req.deliveryDeadline.slice(0, 10),
+      });
+    }
+  }, [req]);
+
+  const save = async () => {
+    if (!requestId) return;
+    try {
+      await requestsService.update(requestId, {
+        itemName: form.values.itemName,
+        itemDescription: form.values.itemDescription,
+        origin: form.values.origin,
+        destination: form.values.destination,
+        deliveryDeadline: new Date(form.values.deliveryDeadline).toISOString(),
+      });
+      notify.success('Updated');
+      navigate('/app/requester/requests/detail', { state: { requestId } });
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
+  if (!requestId) return <Text>Missing request id</Text>;
+  if (isLoading || !req) return <Skeleton height={120} />;
 
   return (
-    <Stack gap="lg" pb={48}>
-      <Box>
-        <Title order={2} fz={26} fw={700} c={colors.navyDeep}>
-          Edit request
-        </Title>
-        <Text fz={15} c={colors.mutedText} mt={6}>
-          Updates may reset active matches — confirm before saving.
-        </Text>
-      </Box>
-
-      <ShellCard>
-        <Stack gap="md">
-          <NumberInput label="Max payout (USD)" defaultValue={186} min={0} />
-          <Textarea label="Updated notes" minRows={3} placeholder="Changes to timing, size, or contents…" />
-          <Button
-            onClick={openConfirm}
-            styles={{ root: { background: RQ.communityMint } }}
-            radius="md"
-          >
-            Save updates
-          </Button>
-        </Stack>
-      </ShellCard>
-
-      <Modal opened={confirmOpen} onClose={closeConfirm} centered radius="md" title="Confirm edit">
-        <Stack gap="md">
-          <Text fz={14} c={colors.mutedText}>
-            Are you sure you want to edit? Matched travelers may need to re-confirm pricing and timing.
-          </Text>
-          <Group grow>
-            <Button variant="outline" color="red" onClick={closeConfirm}>
-              Cancel
-            </Button>
-            <Button
-              component={Link}
-              to="/app/requester/requests/detail"
-              onClick={closeConfirm}
-              styles={{ root: { background: RQ.communityMint } }}
-            >
-              Confirm
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+    <Stack>
+      <Title order={2}>Edit request</Title>
+      <TextInput label="Item name" {...form.getInputProps('itemName')} />
+      <Textarea label="Description" {...form.getInputProps('itemDescription')} />
+      <TextInput label="Origin" {...form.getInputProps('origin')} />
+      <TextInput label="Destination" {...form.getInputProps('destination')} />
+      <TextInput label="Deadline" type="date" {...form.getInputProps('deliveryDeadline')} />
+      <Button onClick={() => void save()}>Save</Button>
     </Stack>
   );
 }
 
-const tripSearchResults = [
-  {
-    name: 'Marcus Holt',
-    initials: 'MH',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&q=70',
-    route: 'JFK → MAD',
-    when: 'May 18 · 08:05',
-    price: '$12.00',
-  },
-  {
-    name: 'Yuki Tanaka',
-    initials: 'YT',
-    route: 'SFO → NRT',
-    when: 'May 21 · 13:45',
-    price: '$18.50',
-  },
-  {
-    name: 'Aisha Khalil',
-    initials: 'AK',
-    route: 'LHR → JFK',
-    when: 'Jun 03 · 19:30',
-    price: '$42.00',
-  },
-];
-
 export function RequesterBrowseTripsPage() {
+  const navigate = useNavigate();
+  const { page, limit, setPage } = usePagination(10);
+  const [origin, setOrigin] = useState('');
+  const [destination, setDestination] = useState('');
+  const [socialImpact, setSocialImpact] = useState(false);
+
+  const params = useMemo(
+    () => ({
+      origin: origin.trim() || undefined,
+      destination: destination.trim() || undefined,
+      socialImpact: socialImpact || undefined,
+      page,
+      limit,
+    }),
+    [origin, destination, socialImpact, page, limit],
+  );
+
+  const { data, isLoading, refetch } = useApi(() => tripsService.browse(params), [
+    origin,
+    destination,
+    socialImpact,
+    page,
+    limit,
+  ]);
+
+  const { data: myRequests } = useApi(() => requestsService.getMy({ status: 'pending', limit: 20 }), []);
+
+  const [modal, setModal] = useState<{ trip: Trip } | null>(null);
+  const [pickReq, setPickReq] = useState('');
+  const [fee, setFee] = useState(40);
+
+  const match = async () => {
+    if (!modal || !pickReq) {
+      notify.error('Select one of your pending requests');
+      return;
+    }
+    try {
+      await bookingsService.match({
+        requestId: pickReq,
+        tripId: modal.trip._id,
+        offeredFee: fee,
+      });
+      notify.success('Booking created');
+      setModal(null);
+      void refetch();
+      navigate('/app/bookings');
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Match failed');
+    }
+  };
+
+  const rows = data?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
+
+  const pendingRequests = (myRequests?.data ?? []).filter((r) => r.status === 'pending');
+
   return (
-    <Box pb={96}>
-      <Stack gap="md" mb="lg">
-        <div>
-          <Title order={2} fz={26} fw={700} c={colors.navyDeep}>
-            Browse trips
-          </Title>
-          <Text fz={15} c={colors.mutedText} mt={4}>
-            Published routes from verified travelers matching your corridors.
-          </Text>
-        </div>
-      </Stack>
+    <Stack gap="md" pb={48}>
+      <Title order={2}>Browse trips</Title>
+      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+        <TextInput label="Origin" value={origin} onChange={(e) => setOrigin(e.currentTarget.value)} />
+        <TextInput label="Destination" value={destination} onChange={(e) => setDestination(e.currentTarget.value)} />
+        <Select
+          label="Social impact"
+          data={[
+            { value: 'false', label: 'Any' },
+            { value: 'true', label: 'Community-friendly only' },
+          ]}
+          value={socialImpact ? 'true' : 'false'}
+          onChange={(v) => setSocialImpact(v === 'true')}
+        />
+      </SimpleGrid>
+      <Button onClick={() => { setPage(1); void refetch(); }}>Apply filters</Button>
 
-      <Paper radius="md" p="md" withBorder mb="lg" shadow="xs" bg="#fff">
-        <Group align="flex-end" gap="sm" wrap="wrap" grow>
-          <TextInput label="From" placeholder="Airport / city" style={{ flex: '1 1 120px', minWidth: 100 }} />
-          <TextInput label="To" placeholder="Airport / city" style={{ flex: '1 1 120px', minWidth: 100 }} />
-          <TextInput label="Date" type="date" style={{ flex: '1 1 140px', minWidth: 120 }} />
-          <TextInput label="Weight" placeholder="kg" style={{ flex: '1 1 80px', minWidth: 70 }} />
-          <Button radius="md" styles={{ root: { background: MU.teal } }}>
-            Search
-          </Button>
-        </Group>
-      </Paper>
-
-      <Grid gap="lg">
-        <Grid.Col span={{ base: 12, md: 3 }}>
-          <Paper radius="md" p="md" withBorder shadow="xs" bg="#fff" style={{ position: 'sticky', top: 88 }}>
-            <Group justify="space-between" mb="md">
-              <Text fw={700} fz={14}>
-                Filters
-              </Text>
-              <Anchor fz={13} styles={{ root: { color: MU.teal } }}>
-                Clear all
-              </Anchor>
-            </Group>
-            <Text fz={12} fw={700} tt="uppercase" c={colors.subtleText} mb={8}>
-              Trip status
-            </Text>
-            <Stack gap="xs" mb="md">
-              <Checkbox defaultChecked label="Active" color="brandTeal" styles={{ label: { fontSize: 14 } }} />
-              <Checkbox label="Almost full" color="brandTeal" styles={{ label: { fontSize: 14 } }} />
-              <Checkbox label="New" color="brandTeal" styles={{ label: { fontSize: 14 } }} />
-            </Stack>
-            <Text fz={12} fw={700} tt="uppercase" c={colors.subtleText} mb={8}>
-              Vehicle type
-            </Text>
-            <Stack gap="xs">
-              <Checkbox defaultChecked label="Personal" color="brandTeal" styles={{ label: { fontSize: 14 } }} />
-              <Checkbox label="Commercial" color="brandTeal" styles={{ label: { fontSize: 14 } }} />
-            </Stack>
-          </Paper>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 9 }}>
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-            {tripSearchResults.map((t) => (
-              <Paper key={t.route + t.when} radius="md" p="lg" withBorder shadow="xs" bg="#fff">
-                <Group gap="sm" mb="md">
-                  <Avatar src={t.avatar} radius="xl" size={44} color="brandTeal">
-                    {t.avatar ? undefined : t.initials}
-                  </Avatar>
-                  <div>
-                    <Text fw={700} fz={15}>
-                      {t.name}
-                    </Text>
-                    <Text fz={13} fw={600} c={colors.navyDeep}>
-                      {t.route}
-                    </Text>
-                  </div>
-                </Group>
-                <Text fz={12} c={colors.mutedText} mb={4}>
-                  {t.when}
+      {isLoading ? (
+        <Skeleton height={120} />
+      ) : (
+        rows.map((t: Trip) => (
+          <Paper key={t._id} p="md" withBorder>
+            <Group justify="space-between">
+              <div>
+                <Text fw={700}>
+                  {t.origin} → {t.destination}
                 </Text>
-                <Group justify="space-between" mt="lg" wrap="nowrap" align="center">
-                  <Text fw={800} fz={18} c={MU.teal}>
-                    {t.price}
-                  </Text>
-                  <Button component={Link} to="/app/booking/confirm" size="xs" radius="md" styles={{ root: { background: MU.teal } }}>
-                    Book
-                  </Button>
-                </Group>
-              </Paper>
-            ))}
-          </SimpleGrid>
-          <Group justify="center" mt="xl">
-            <Pagination total={8} siblings={1} size="sm" />
-          </Group>
-        </Grid.Col>
-      </Grid>
+                <Text fz={13} c="dimmed">
+                  Departs {new Date(t.departureDate).toLocaleDateString()}
+                </Text>
+              </div>
+              <Button size="xs" onClick={() => setModal({ trip: t })}>
+                Send request
+              </Button>
+            </Group>
+          </Paper>
+        ))
+      )}
 
-      <Affix position={{ bottom: 32, right: 32 }}>
-        <ActionIcon
-          component={Link}
-          to="/app/requester/select-type"
-          size={56}
-          radius="xl"
-          variant="filled"
-          style={{
-            background: MU.teal,
-            boxShadow: '0 10px 25px rgba(20,184,166,0.35)',
-          }}
-        >
-          <IconPlus size={28} stroke={2} />
+      <Pagination value={page} onChange={setPage} total={totalPages} />
+
+      <Modal opened={!!modal} onClose={() => setModal(null)} title="Match to your request">
+        <Stack gap="sm">
+          <Select
+            label="Your pending request"
+            data={pendingRequests.map((r) => ({ value: r._id, label: r.itemName }))}
+            value={pickReq}
+            onChange={(v) => setPickReq(v ?? '')}
+          />
+          <NumberInput label="Offered fee" value={fee} onChange={(v) => setFee(Number(v) || 0)} />
+          <Button onClick={() => void match()}>Confirm match</Button>
+        </Stack>
+      </Modal>
+
+      <Affix position={{ bottom: 24, right: 24 }}>
+        <ActionIcon component={Link} to="/app/requester/select-type" size={48} radius="xl" color="blue">
+          <IconPlus />
         </ActionIcon>
       </Affix>
-    </Box>
+    </Stack>
   );
 }
 
 export function RequesterMatchDetailPage() {
-  const imgSrc = 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&q=80';
-
   return (
-    <Stack gap="lg" pb={48}>
-      <Box>
-        <Title order={2} fz={26} fw={700} c={colors.navyDeep}>
-          Request match details
-        </Title>
-        <Text fz={15} c={colors.mutedText} mt={6}>
-          Review the listing, corridor, and requester reputation before booking.
-        </Text>
-      </Box>
-
-      <Grid gap="lg">
-        <Grid.Col span={{ base: 12, md: 7 }}>
-          <Stack gap="md">
-            <Paper radius="md" withBorder p={0} style={{ overflow: 'hidden' }}>
-              <Image alt="Parcel" fit="cover" h={340} src={imgSrc} />
-            </Paper>
-            <Paper radius="md" p="lg" withBorder shadow="xs">
-              <Text fw={700} fz={16} mb="sm">
-                Request summary
-              </Text>
-              <SimpleGrid cols={2} spacing="sm">
-                <div>
-                  <Text fz={11} tt="uppercase" fw={700} c={colors.subtleText}>
-                    Weight
-                  </Text>
-                  <Text fz={14}>1.9 kg</Text>
-                </div>
-                <div>
-                  <Text fz={11} tt="uppercase" fw={700} c={colors.subtleText}>
-                    Dimensions
-                  </Text>
-                  <Text fz={14}>40 × 30 × 8 cm</Text>
-                </div>
-                <div>
-                  <Text fz={11} tt="uppercase" fw={700} c={colors.subtleText}>
-                    Pickup window
-                  </Text>
-                  <Text fz={14}>May 12–14 AM</Text>
-                </div>
-                <div>
-                  <Text fz={11} tt="uppercase" fw={700} c={colors.subtleText}>
-                    Delivery by
-                  </Text>
-                  <Text fz={14}>May 16 EOD Paris</Text>
-                </div>
-              </SimpleGrid>
-            </Paper>
-            <Paper radius="md" withBorder p={0} h={220} style={{ overflow: 'hidden' }}>
-              <Box
-                h="100%"
-                style={{
-                  background: `linear-gradient(135deg,#dfe9f5 0%,#c9daf0 50%, ${colors.inputBg} 100%)`,
-                  position: 'relative',
-                }}
-              >
-                <svg width="100%" height="120" style={{ marginTop: 48 }}>
-                  <defs>
-                    <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor={MU.teal} />
-                      <stop offset="100%" stopColor="#60a5fa" />
-                    </linearGradient>
-                  </defs>
-                  <circle cx="80" cy="60" r="8" fill={colors.navyDeep} />
-                  <circle cx="400" cy="40" r="8" fill={MU.teal} />
-                  <path
-                    d="M 88 62 Q 240 110 392 42"
-                    fill="none"
-                    stroke="url(#lg1)"
-                    strokeWidth={4}
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <Group pos="absolute" bottom={14} gap="xl" px="xl">
-                  <Group gap={6}>
-                    <IconMapPin size={16} />
-                    <Text fz={13}>Pickup · JFK T4</Text>
-                  </Group>
-                  <Group gap={6}>
-                    <IconMapPin size={16} color={MU.teal} />
-                    <Text fz={13}>Drop · CDG</Text>
-                  </Group>
-                </Group>
-              </Box>
-            </Paper>
-          </Stack>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, md: 5 }}>
-          <Stack gap="md">
-            <Paper radius="md" p="lg" withBorder shadow="xs" style={{ position: 'sticky', top: 88 }}>
-              <Group justify="space-between" mb={4}>
-                <Text fw={800} fz={18}>
-                  Delivery request
-                </Text>
-                <Badge variant="light" color="teal">
-                  Verified
-                </Badge>
-              </Group>
-              <Text fz={22} fw={800} mb="xs">
-                MacBook Pro 13&quot;
-              </Text>
-              <Text fz={13} c={colors.mutedText} mb="md">
-                Listed by traveler · escrow protected
-              </Text>
-              <Divider />
-              <Group justify="space-between" mt="md">
-                <Text fz={14}>Traveler payout</Text>
-                <Text fw={700}>$154.50</Text>
-              </Group>
-              <Group justify="space-between" mt="xs">
-                <Text fz={14}>Platform fee</Text>
-                <Text fw={700}>$18.50</Text>
-              </Group>
-              <Group justify="space-between" mt="md">
-                <Text fw={800}>You pay</Text>
-                <Text fw={800} fz={22} c={MU.teal}>
-                  $173.00
-                </Text>
-              </Group>
-              <Button
-                component={Link}
-                to="/app/booking/confirm"
-                fullWidth
-                mt="lg"
-                radius="md"
-                styles={{ root: { background: MU.teal } }}
-              >
-                Book request
-              </Button>
-
-              <Paper mt="xl" radius="md" withBorder p="sm" bg={colors.inputBg}>
-                <Text fz={11} fw={700} tt="uppercase" c={colors.subtleText} mb={8}>
-                  Requester profile
-                </Text>
-                <Group>
-                  <Avatar radius="xl">JP</Avatar>
-                  <div>
-                    <Text fw={700}>Jordan P.</Text>
-                    <Group gap={4}>
-                      <IconStar size={14} fill={MU.teal} color={MU.teal} />
-                      <Text fz={13}>4.8 · Member since 2024</Text>
-                    </Group>
-                  </div>
-                </Group>
-              </Paper>
-            </Paper>
-          </Stack>
-        </Grid.Col>
-      </Grid>
+    <Stack>
+      <Title order={2}>Match detail</Title>
+      <Text fz={14} c="dimmed">
+        Open bookings for live status.
+      </Text>
+      <Button component={Link} to="/app/bookings">
+        My bookings
+      </Button>
     </Stack>
   );
 }

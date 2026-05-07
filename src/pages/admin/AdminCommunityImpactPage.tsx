@@ -1,225 +1,221 @@
-import { Box, Button, Grid, Group, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core';
-import { IconPlus } from '@tabler/icons-react';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Group,
+  Paper,
+  Progress,
+  SimpleGrid,
+  Skeleton,
+  Stack,
+  Table,
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core';
+import { useState } from 'react';
+import { useApi } from '../../hooks/useApi';
+import { adminService, type ImpactReport } from '../../api/services/admin.service';
 import { adminUi as AU } from '../../theme';
 
-function ImpactDonut() {
-  const segments = [
-    { pct: 42, color: AU.successGreen },
-    { pct: 28, color: AU.accentTeal },
-    { pct: 18, color: '#3b82f6' },
-    { pct: 12, color: '#94a3b8' },
-  ];
-  let cum = 0;
-  const grad = segments
-    .map((s) => {
-      const start = (cum / 100) * 360;
-      cum += s.pct;
-      const end = (cum / 100) * 360;
-      return `${s.color} ${start}deg ${end}deg`;
+function exportByTypeCsv(byType: ImpactReport['byType']) {
+  const header = 'type,count,fulfilled,fulfillmentPct\n';
+  const body = byType
+    .map((row) => {
+      const pct = row.count ? Math.round((row.fulfilled / row.count) * 10000) / 100 : 0;
+      return `${JSON.stringify(row.type)},${row.count},${row.fulfilled},${pct}`;
     })
-    .join(', ');
-  const labels = ['Travel stipends', 'Regional hubs', 'Emergency relief', 'Awareness'];
-  return (
-    <Group justify="center" gap="lg" wrap="wrap">
-      <Box
-        w={168}
-        h={168}
-        style={{
-          borderRadius: '50%',
-          background: `conic-gradient(${grad})`,
-          position: 'relative',
-          boxShadow: '0 14px 36px rgba(15,23,42,0.1)',
-        }}
-      >
-        <Box
-          style={{
-            position: 'absolute',
-            inset: 46,
-            borderRadius: '50%',
-            background: '#fff',
-            display: 'grid',
-            placeItems: 'center',
-          }}
-        >
-          <Text fz={22} fw={800}>
-            100%
-          </Text>
-          <Text fz={11} c="dimmed">
-            Allocated
-          </Text>
-        </Box>
-      </Box>
-      <Stack gap={6} miw={160}>
-        {segments.map((s, i) => (
-          <Group key={labels[i]} gap={8} wrap="nowrap">
-            <Box w={10} h={10} style={{ borderRadius: 4, background: s.color }} />
-            <Text fz={13} truncate>
-              {labels[i]}
-            </Text>
-            <Text fz={13} fw={700} ml="auto">
-              {s.pct}%
-            </Text>
-          </Group>
-        ))}
-      </Stack>
-    </Group>
-  );
-}
-
-/** Stylized dots on a simple world silhouette (approximate UX, not geographic GIS). */
-function ImpactMapSvg() {
-  const markers = [
-    { cx: 120, cy: 88, label: 'NA' },
-    { cx: 232, cy: 112, label: 'EU' },
-    { cx: 302, cy: 168, label: 'AF' },
-    { cx: 388, cy: 200, label: 'APAC' },
-    { cx: 168, cy: 198, label: 'LATAM' },
-  ];
-  return (
-    <svg viewBox="0 0 480 240" width="100%" height={220} style={{ display: 'block' }}>
-      <defs>
-        <linearGradient id="mapOcean" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#ecfdf5" />
-          <stop offset="100%" stopColor="#d1fae5" />
-        </linearGradient>
-      </defs>
-      <rect width="480" height="240" fill="url(#mapOcean)" rx={12} />
-      <path
-        fill="#bbf7d0"
-        opacity={0.85}
-        d="M40 120 Q80 60 140 80 T260 70 T400 100 T420 160 T320 200 T180 190 T60 160 Z"
-      />
-      <path
-        fill="#86efac"
-        opacity={0.55}
-        d="M280 140 Q340 120 380 150 T440 180 T360 210 T280 180 Z"
-      />
-      {markers.map((m) => (
-        <g key={m.label}>
-          <circle cx={m.cx} cy={m.cy} r={14} fill={AU.successGreen} opacity={0.2} />
-          <circle cx={m.cx} cy={m.cy} r={6} fill={AU.successGreen} stroke="#fff" strokeWidth={2} />
-        </g>
-      ))}
-    </svg>
-  );
+    .join('\n');
+  const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'impact-by-type.csv';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function AdminCommunityImpactPage() {
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  const { data: impact, isLoading, error } = useApi(
+    () =>
+      adminService.getImpact({
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      }),
+    [dateFrom, dateTo],
+  );
+
+  const ov = impact?.overview;
+
   return (
     <Stack gap="lg">
-      <div>
-        <Title order={2} fz={24} fw={800}>
-          Community impact overview
-        </Title>
-        <Text fz={14} c="dimmed" mt={4}>
-          Where funds flow, which regions are active, and who is driving outcomes.
+      <Title order={2} fz={24} fw={800}>
+        Community impact
+      </Title>
+      <Text fz={14} c="dimmed">
+        Support deliveries, beneficiaries, and top community travelers.
+      </Text>
+
+      <Paper p="md" radius="md" withBorder>
+        <Group wrap="wrap" gap="sm" align="flex-end">
+          <TextInput type="date" label="From" value={dateFrom} onChange={(e) => setDateFrom(e.currentTarget.value)} w={160} />
+          <TextInput type="date" label="To" value={dateTo} onChange={(e) => setDateTo(e.currentTarget.value)} w={160} />
+          <Button
+            variant="outline"
+            disabled={!impact?.byType?.length}
+            onClick={() => impact && exportByTypeCsv(impact.byType)}
+          >
+            Export CSV (by type)
+          </Button>
+        </Group>
+      </Paper>
+
+      {error ? (
+        <Text c="red" fz={14}>
+          {error}
         </Text>
-      </div>
+      ) : null}
 
       <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }} spacing="md">
-        {[
-          { t: 'Total impact score', v: '8.4', h: 'Composite index · normalized' },
-          { t: 'Active projects', v: '1,284', h: 'Open initiatives' },
-          { t: 'Volunteers', v: '432', h: 'Hours logged · 30d' },
-          { t: 'Total donations', v: '$24,500', h: 'Verified contributions' },
-        ].map((c) => (
-          <Paper key={c.t} p="lg" radius="md" withBorder shadow="xs" bg="#fff">
-            <Text fz={12} fw={700} tt="uppercase" c="dimmed" mb={6}>
-              {c.t}
-            </Text>
-            <Text fz={26} fw={800}>
-              {c.v}
-            </Text>
-            <Text fz={12} c="dimmed" mt={4}>
-              {c.h}
-            </Text>
-          </Paper>
-        ))}
+        {isLoading ? (
+          [1, 2, 3, 4].map((i) => <Skeleton key={i} height={88} />)
+        ) : (
+          <>
+            <Paper p="lg" radius="md" withBorder>
+              <Text fz={12} fw={700} tt="uppercase" c="dimmed">
+                Support requests fulfilled
+              </Text>
+              <Text fz={28} fw={800} c={AU.accentTeal}>
+                {ov?.supportRequestsFulfilled ?? 0}
+              </Text>
+            </Paper>
+            <Paper p="lg" radius="md" withBorder>
+              <Text fz={12} fw={700} tt="uppercase" c="dimmed">
+                Elderly assisted
+              </Text>
+              <Text fz={28} fw={800} c={AU.accentTeal}>
+                {ov?.elderlyAssisted ?? 0}
+              </Text>
+            </Paper>
+            <Paper p="lg" radius="md" withBorder>
+              <Text fz={12} fw={700} tt="uppercase" c="dimmed">
+                Volunteer deliveries
+              </Text>
+              <Text fz={28} fw={800} c={AU.accentTeal}>
+                {ov?.volunteerDeliveries ?? 0}
+              </Text>
+            </Paper>
+            <Paper p="lg" radius="md" withBorder>
+              <Text fz={12} fw={700} tt="uppercase" c="dimmed">
+                Community champions
+              </Text>
+              <Text fz={28} fw={800} c={AU.accentTeal}>
+                {ov?.communityChampions ?? 0}
+              </Text>
+            </Paper>
+          </>
+        )}
       </SimpleGrid>
 
-      <Grid gap="md">
-        <Grid.Col span={{ base: 12, lg: 5 }}>
-          <Paper p="lg" radius="md" withBorder shadow="xs" bg="#fff" h="100%">
-            <Text fw={700} fz={15} mb="md">
-              Payment distribution
-            </Text>
-            <ImpactDonut />
-          </Paper>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, lg: 7 }}>
-          <Paper p="lg" radius="md" withBorder shadow="xs" bg="#fff" h="100%">
-            <Text fw={700} fz={15} mb="sm">
-              Causes impacted by region
-            </Text>
-            <Text fz={13} c="dimmed" mb="md">
-              Green markers highlight active programs with verified disbursements.
-            </Text>
-            <ImpactMapSvg />
-          </Paper>
-        </Grid.Col>
-      </Grid>
+      <Paper p="lg" radius="md" withBorder>
+        <Text fw={700} mb="md">
+          By beneficiary type
+        </Text>
+        {isLoading ? (
+          <Skeleton height={120} />
+        ) : (
+          <Table striped>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Type</Table.Th>
+                <Table.Th>Count</Table.Th>
+                <Table.Th>Fulfilled</Table.Th>
+                <Table.Th>Fulfillment</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {(impact?.byType ?? []).map((row) => {
+                const pct = row.count ? Math.round((row.fulfilled / row.count) * 1000) / 10 : 0;
+                return (
+                  <Table.Tr key={row.type}>
+                    <Table.Td>{row.type}</Table.Td>
+                    <Table.Td>{row.count}</Table.Td>
+                    <Table.Td>{row.fulfilled}</Table.Td>
+                    <Table.Td>
+                      <Progress value={pct} size="lg" color="teal" />
+                      <Text fz={12} c="dimmed" mt={4}>
+                        {pct}%
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
+            </Table.Tbody>
+          </Table>
+        )}
+      </Paper>
 
-      <Grid gap="md" align="stretch">
-        <Grid.Col span={{ base: 12, md: 8 }}>
-          <Paper p="lg" radius="md" withBorder shadow="xs" bg="#fff">
-            <Text fw={700} fz={15} mb="md">
-              Program milestones
-            </Text>
-            <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              {['Scholarships · Nairobi hub', 'Meals · NYC mutual aid', 'Reforestation · Andes corridor'].map(
-                (label) => (
-                  <Paper key={label} p="md" radius="md" bg={AU.pageBg}>
-                    <Text fz={13} fw={700}>
-                      {label}
-                    </Text>
-                    <Text fz={12} c="dimmed" mt={6}>
-                      Dashboard syncs nightly from disbursement rails.
-                    </Text>
-                  </Paper>
-                ),
-              )}
-            </SimpleGrid>
-          </Paper>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 4 }}>
-          <Paper p="lg" radius="md" withBorder shadow="xs" bg="#fff" h="100%">
-            <Text fw={700} fz={15} mb="md">
-              Top contributors
-            </Text>
-            <Stack gap={0}>
-              {[
-                { n: 'Jordan Lee', proj: 'Youth STEM · 14 sites', amt: '$4,200' },
-                { n: 'Partnership Fund', proj: 'Logistics subsidy', amt: '$3,850' },
-                { n: 'Ana Morales', proj: 'Local chapters', amt: '$1,910' },
-                { n: 'Northwind Grants', proj: 'Field ops stipend', amt: '$980' },
-              ].map((row, i, arr) => (
-                <div key={row.n} style={{ padding: '12px 0', borderBottom: i < arr.length - 1 ? '1px solid #eceef3' : 'none' }}>
-                  <Group justify="space-between" wrap="nowrap">
-                    <div style={{ minWidth: 0 }}>
-                      <Text fz={13} fw={700} truncate>
-                        {row.n}
+      <Paper p="lg" radius="md" withBorder>
+        <Text fw={700} mb="md">
+          By payment type
+        </Text>
+        <Group gap="sm">
+          {(impact?.byPaymentType ?? []).map((p) => (
+            <Badge key={p.paymentType} size="lg" variant="light" color="gray">
+              {p.paymentType}: {p.count}
+            </Badge>
+          ))}
+          {!isLoading && (impact?.byPaymentType ?? []).length === 0 ? <Text c="dimmed">No data</Text> : null}
+        </Group>
+      </Paper>
+
+      <Paper p="lg" radius="md" withBorder>
+        <Text fw={700} mb="md">
+          Top travelers (support deliveries)
+        </Text>
+        {isLoading ? (
+          <Skeleton height={160} />
+        ) : (
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Traveler</Table.Th>
+                <Table.Th>Deliveries</Table.Th>
+                <Table.Th>Badge</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {(impact?.topTravelers ?? []).map((t) => (
+                <Table.Tr key={t.travelerId}>
+                  <Table.Td>
+                    <Group gap="sm">
+                      <Avatar src={t.profilePhoto ?? undefined} radius="xl" size={36}>
+                        {t.fullName?.charAt(0)}
+                      </Avatar>
+                      <Text fw={600}>{t.fullName}</Text>
+                    </Group>
+                  </Table.Td>
+                  <Table.Td>{t.supportDeliveries}</Table.Td>
+                  <Table.Td>
+                    {t.supportDeliveries >= 5 ? (
+                      <Badge color="teal" variant="light">
+                        community_champion
+                      </Badge>
+                    ) : (
+                      <Text fz={13} c="dimmed">
+                        —
                       </Text>
-                      <Text fz={12} c="dimmed" lineClamp={1}>
-                        {row.proj}
-                      </Text>
-                    </div>
-                    <Text fz={13} fw={800} style={{ flexShrink: 0 }}>
-                      {row.amt}
-                    </Text>
-                  </Group>
-                </div>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
               ))}
-            </Stack>
-            <Button fullWidth mt="lg" radius="md" leftSection={<IconPlus size={18} />} {...tealBtn}>
-              Add new project
-            </Button>
-          </Paper>
-        </Grid.Col>
-      </Grid>
+            </Table.Tbody>
+          </Table>
+        )}
+      </Paper>
     </Stack>
   );
 }
-
-const tealBtn = {
-  styles: { root: { backgroundColor: AU.accentTeal, border: 'none', color: '#fff' } },
-} as const;

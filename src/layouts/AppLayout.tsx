@@ -6,10 +6,12 @@ import {
   Box,
   Burger,
   Group,
+  Indicator,
   NavLink,
   ScrollArea,
   Text,
   TextInput,
+  UnstyledButton,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
@@ -23,8 +25,11 @@ import {
   IconUser,
   IconWallet,
 } from '@tabler/icons-react';
+import { useEffect, useState } from 'react';
 import { Outlet, Link as RouterLink, useLocation } from 'react-router-dom';
+import { notificationsService } from '../api/services/notifications.service';
 import { APP_SCREEN_CATALOG, groupCatalogBySection } from '../app/catalog';
+import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme';
 
 const grouped = groupCatalogBySection(APP_SCREEN_CATALOG);
@@ -51,6 +56,30 @@ function sectionTitle(key: string) {
 export function AppLayout() {
   const [opened, { toggle }] = useDisclosure();
   const location = useLocation();
+  const { user, logout } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const fetchCount = async () => {
+      try {
+        const data = await notificationsService.getAll({ isRead: false, limit: 1 });
+        if (data) setUnreadCount(data.unreadCount ?? 0);
+      } catch {
+        setUnreadCount(0);
+      }
+    };
+    void fetchCount();
+    const interval = setInterval(fetchCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const initials =
+    user?.fullName
+      ?.split(/\s+/)
+      .map((p) => p[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() ?? '?';
 
   const travelerLinks = (
     <>
@@ -216,12 +245,24 @@ export function AppLayout() {
             style={{ flex: 1 }}
           />
           <Group gap="sm" wrap="nowrap">
-            <Anchor component={RouterLink} to="/login" fz={14} fw={500} c={colors.mutedText}>
+            <Anchor
+              component="button"
+              type="button"
+              fz={14}
+              fw={500}
+              c={colors.mutedText}
+              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+              onClick={() => void logout()}
+            >
               Log out
             </Anchor>
-            <IconBell size={20} stroke={1.5} style={{ color: colors.mutedText }} />
-            <Avatar radius="xl" size="sm" color="brandTeal">
-              QA
+            <UnstyledButton component={RouterLink} to="/app/notifications" aria-label="Notifications">
+              <Indicator inline disabled={unreadCount <= 0} label={unreadCount > 99 ? '99+' : unreadCount} size={18}>
+                <IconBell size={20} stroke={1.5} style={{ color: colors.mutedText }} />
+              </Indicator>
+            </UnstyledButton>
+            <Avatar radius="xl" size="sm" color="brandTeal" src={user?.profilePhoto ?? undefined}>
+              {initials}
             </Avatar>
           </Group>
         </Group>

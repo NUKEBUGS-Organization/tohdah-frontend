@@ -2,206 +2,261 @@ import {
   Avatar,
   Badge,
   Button,
-  Grid,
+  Drawer,
   Group,
+  Pagination,
   Paper,
+  Skeleton,
   Stack,
+  Tabs,
   Text,
-  TextInput,
+  Textarea,
   Title,
 } from '@mantine/core';
-import { IconSearch, IconThumbDown, IconThumbUp } from '@tabler/icons-react';
+import { useDisclosure } from '@mantine/hooks';
 import { useState } from 'react';
-import { adminUi as AU } from '../../theme';
+import { useApi } from '../../hooks/useApi';
+import { usePagination } from '../../hooks/usePagination';
+import { adminService } from '../../api/services/admin.service';
+import type { DeliveryRequest, User } from '../../api/types';
+import { notify } from '../../utils/notify';
+import { formatDateTime, populatedName } from './adminHelpers';
 
-type Req = {
-  id: string;
-  name: string;
-  avatar: string;
-  category: string;
-  snippet: string;
-  full: string;
-  joined: string;
-};
+function urgencyColor(u: string) {
+  if (u === 'critical') return 'red';
+  if (u === 'high') return 'orange';
+  if (u === 'medium') return 'yellow';
+  return 'gray';
+}
 
-const REQUESTS: Req[] = [
-  {
-    id: 'r1',
-    name: 'Amir H.',
-    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=96&q=70',
-    category: 'Safety concern',
-    snippet: 'Traveler asked to meet outside the airport secure zone…',
-    full:
-      'Traveler asked to meet outside the airport secure zone after I already accepted the booking. I declined and would like this profile reviewed for policy fit.',
-    joined: 'Mar 2025',
-  },
-  {
-    id: 'r2',
-    name: 'Sofia L.',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=96&q=70',
-    category: 'Spam / solicitation',
-    snippet: 'Requester pasted external payment links in chat…',
-    full:
-      'Requester pasted external payment links in chat and insisted on cancelling on-platform escrow. Screenshots attached in the moderated thread.',
-    joined: 'Jan 2024',
-  },
-  {
-    id: 'r3',
-    name: 'Devon Pierce',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=96&q=70',
-    category: 'Harassment',
-    snippet: 'Repeated pings after match was declined…',
-    full:
-      'After I declined capacity, the same account pinged four times within an hour referencing my public profile.',
-    joined: 'Aug 2026',
-  },
-];
+function requestId(r: DeliveryRequest & { _id?: { toString?: () => string } }): string {
+  const id = r._id as unknown;
+  if (typeof id === 'string') return id;
+  if (id && typeof (id as { toString?: () => string }).toString === 'function') return (id as { toString: () => string }).toString();
+  return String(id);
+}
 
 export function AdminSupportModerationPage() {
-  const [sel, setSel] = useState(REQUESTS[0]!.id);
-  const active = REQUESTS.find((r) => r.id === sel) ?? REQUESTS[0]!;
-  const [query, setQuery] = useState('');
+  const [tab, setTab] = useState<'pending_review' | 'approved' | 'rejected'>('pending_review');
+  const { page, limit, setPage } = usePagination(20);
+  const [drawerOpen, drawer] = useDisclosure(false);
+  const [selected, setSelected] = useState<(DeliveryRequest & Record<string, unknown>) | null>(null);
+  const [approveNotes, setApproveNotes] = useState('');
+  const [rejectNotes, setRejectNotes] = useState('');
 
-  const list = REQUESTS.filter(
-    (r) =>
-      !query.trim() ||
-      r.name.toLowerCase().includes(query.toLowerCase()) ||
-      r.category.toLowerCase().includes(query.toLowerCase()),
+  const { data, isLoading, error, refetch } = useApi(
+    () =>
+      adminService.getSupportRequests({
+        adminApprovalStatus: tab,
+        page,
+        limit,
+      }),
+    [tab, page, limit],
   );
+
+  const rows = (data?.data ?? []) as (DeliveryRequest & Record<string, unknown>)[];
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
+
+  const openReview = (r: DeliveryRequest & Record<string, unknown>) => {
+    setSelected(r);
+    setApproveNotes('');
+    setRejectNotes('');
+    drawer.open();
+  };
+
+  const approve = async () => {
+    if (!selected) return;
+    try {
+      await adminService.approveSupport(requestId(selected), approveNotes.trim() || undefined);
+      notify.success('Request approved');
+      drawer.close();
+      void refetch();
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const reject = async () => {
+    if (!selected) return;
+    if (!rejectNotes.trim()) {
+      notify.error('Notes are required to reject');
+      return;
+    }
+    try {
+      await adminService.rejectSupport(requestId(selected), rejectNotes.trim());
+      notify.success('Request rejected');
+      drawer.close();
+      void refetch();
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const requester = selected?.requesterId as Partial<User> | string | undefined;
 
   return (
     <Stack gap="lg">
-      <Paper
-        p={{ base: 'md', lg: 'lg' }}
-        radius="lg"
-        style={{
-          background: `linear-gradient(135deg, ${AU.successGreen} 0%, #1b4332 100%)`,
-          color: '#fff',
+      <Title order={2} fz={24} fw={800}>
+        Support request moderation
+      </Title>
+      <Text fz={14} c="dimmed">
+        Community support deliveries require admin approval before travelers can match.
+      </Text>
+
+      {error ? (
+        <Text c="red" fz={14}>
+          {error}
+        </Text>
+      ) : null}
+
+      <Tabs
+        value={tab}
+        onChange={(v) => {
+          if (v === 'pending_review' || v === 'approved' || v === 'rejected') {
+            setTab(v);
+            setPage(1);
+          }
         }}
       >
-        <Stack gap="md">
-          <Title order={2} fz={{ base: 20, md: 24 }} c="#fff">
-            Community support request moderation
-          </Title>
-          <Text fz={14} c="rgba(255,255,255,0.88)" maw={720}>
-            Review flagged conversations and profile behavior. Actions here sync to audit logs.
-          </Text>
-          <Group gap="xl" mt="xs">
-            <div>
-              <Text fz={28} fw={800}>
-                24
-              </Text>
-              <Text fz={13} c="rgba(255,255,255,0.82)">
-                Active requests
-              </Text>
-            </div>
-            <div>
-              <Text fz={28} fw={800}>
-                156
-              </Text>
-              <Text fz={13} c="rgba(255,255,255,0.82)">
-                Resolved · 30d
-              </Text>
-            </div>
-            <Badge size="lg" variant="light" color="gray" styles={{ root: { background: 'rgba(255,255,255,0.15)', color: '#fff' } }}>
-              SLA target · 4h first touch
-            </Badge>
-          </Group>
-        </Stack>
-      </Paper>
+        <Tabs.List>
+          <Tabs.Tab value="pending_review">Pending review</Tabs.Tab>
+          <Tabs.Tab value="approved">Approved</Tabs.Tab>
+          <Tabs.Tab value="rejected">Rejected</Tabs.Tab>
+        </Tabs.List>
+      </Tabs>
 
-      <Grid gap="md">
-        <Grid.Col span={{ base: 12, md: 5, lg: 4 }}>
-          <Paper p="md" radius="md" withBorder shadow="xs" bg="#fff">
-            <TextInput
-              placeholder="Search requests…"
-              leftSection={<IconSearch size={16} stroke={1.5} />}
-              mb="md"
-              value={query}
-              onChange={(e) => setQuery(e.currentTarget.value)}
-            />
-            <Stack gap={0}>
-              {list.map((r, i) => (
-                <Paper
-                  key={r.id}
-                  component="button"
-                  type="button"
-                  onClick={() => setSel(r.id)}
-                  p="md"
-                  radius={0}
-                  withBorder={false}
-                  style={{
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    width: '100%',
-                    borderBottom: i < list.length - 1 ? '1px solid #e8ecf1' : 'none',
-                    background: sel === r.id ? `${AU.accentTeal}10` : 'transparent',
-                  }}
-                >
-                  <Group gap="sm" wrap="nowrap" mb={6}>
-                    <Avatar src={r.avatar} size={36} radius="xl" />
-                    <div style={{ minWidth: 0 }}>
-                      <Text fw={700} fz={14} truncate>
-                        {r.name}
+      {isLoading ? (
+        <Stack gap="sm">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} height={72} />
+          ))}
+        </Stack>
+      ) : rows.length === 0 ? (
+        <Text c="dimmed">No requests in this queue.</Text>
+      ) : (
+        <Stack gap="sm">
+          {rows.map((r) => {
+            const rq = r.requesterId as Partial<User> | string | undefined;
+            return (
+              <Paper key={requestId(r)} p="md" radius="md" withBorder>
+                <Group justify="space-between" align="flex-start" wrap="wrap">
+                  <Group gap="md">
+                    <Avatar src={typeof rq === 'object' && rq?.profilePhoto ? rq.profilePhoto : undefined} radius="xl">
+                      {populatedName(rq).charAt(0)}
+                    </Avatar>
+                    <div>
+                      <Text fw={700}>{populatedName(rq)}</Text>
+                      <Group gap="xs" mt={4}>
+                        {r.beneficiaryType ? (
+                          <Badge size="sm" variant="light">
+                            {String(r.beneficiaryType)}
+                          </Badge>
+                        ) : null}
+                        <Badge size="sm" color={urgencyColor(r.urgencyLevel)} variant="light">
+                          {r.urgencyLevel}
+                        </Badge>
+                      </Group>
+                      <Text fz={13} c="dimmed" lineClamp={2} maw={560} mt={6}>
+                        {(r.itemDescription as string)?.slice(0, 140)}
+                        {(r.itemDescription as string)?.length > 140 ? '…' : ''}
                       </Text>
-                      <Badge size="xs" variant="light" color="teal" mt={4}>
-                        {r.category}
-                      </Badge>
+                      <Text fz={12} c="dimmed" mt={4}>
+                        {formatDateTime(r.createdAt)}
+                      </Text>
                     </div>
                   </Group>
-                  <Text fz={12} c="dimmed" lineClamp={2}>
-                    {r.snippet}
-                  </Text>
-                </Paper>
-              ))}
-            </Stack>
-          </Paper>
-        </Grid.Col>
+                  <Button size="sm" variant="light" onClick={() => openReview(r)}>
+                    {tab === 'pending_review' ? 'Review' : 'View'}
+                  </Button>
+                </Group>
+              </Paper>
+            );
+          })}
+        </Stack>
+      )}
 
-        <Grid.Col span={{ base: 12, md: 7, lg: 8 }}>
-          <Paper p="lg" radius="md" withBorder shadow="xs" bg="#fff">
-            <Group align="flex-start" mb="lg">
-              <Avatar src={active.avatar} radius="xl" size={72} />
-              <div>
-                <Text fw={900} fz={22}>
-                  {active.name}
-                </Text>
-                <Text fz={13} c="dimmed">
-                  Member since {active.joined} · Requests queue ID {active.id}
-                </Text>
-                <Badge mt="sm" variant="light" color="orange">
-                  Awaiting moderator decision
-                </Badge>
-              </div>
-            </Group>
+      {!isLoading && rows.length > 0 ? (
+        <Group justify="center">
+          <Pagination total={totalPages} value={page} onChange={setPage} size="sm" />
+        </Group>
+      ) : null}
 
-            <Text fz={12} fw={700} tt="uppercase" c="dimmed" mb={8}>
-              Full message
-            </Text>
-            <Paper p="md" radius="md" bg={AU.pageBg} mb="xl">
-              <Text fz={15} lh={1.65}>
-                {active.full}
+      <Drawer opened={drawerOpen} onClose={drawer.close} title="Support request" size="lg" position="right">
+        {selected ? (
+          <Stack gap="md">
+            <Paper p="md" withBorder radius="md">
+              <Text fw={700} mb="sm">
+                Requester
               </Text>
+              <Group>
+                <Avatar
+                  src={typeof requester === 'object' && requester?.profilePhoto ? requester.profilePhoto : undefined}
+                  radius="xl"
+                  size={56}
+                >
+                  {populatedName(requester).charAt(0)}
+                </Avatar>
+                <div>
+                  <Text fw={700}>{populatedName(requester)}</Text>
+                  {typeof requester === 'object' && requester?.email ? (
+                    <Text fz={13} c="dimmed">
+                      {requester.email}
+                    </Text>
+                  ) : null}
+                  <Group gap="xs" mt={4}>
+                    <Text fz={12}>Rating {typeof requester === 'object' ? (requester.rating ?? '—') : '—'}</Text>
+                    <Text fz={12}>Email {typeof requester === 'object' && requester?.isEmailVerified ? '✓' : '—'}</Text>
+                    <Text fz={12}>Phone {typeof requester === 'object' && requester?.isPhoneVerified ? '✓' : '—'}</Text>
+                  </Group>
+                </div>
+              </Group>
             </Paper>
 
-            <Group grow>
-              <Button leftSection={<IconThumbUp size={18} />} radius="md" {...approveBtn}>
-                Approve closure
-              </Button>
-              <Button leftSection={<IconThumbDown size={18} />} radius="md" variant="filled" color="red">
-                Reject · warn user
-              </Button>
-              <Button radius="md" variant="outline">
-                Request info
-              </Button>
-            </Group>
-          </Paper>
-        </Grid.Col>
-      </Grid>
+            <Stack gap={6}>
+              <Text fw={700}>Request details</Text>
+              <Text fz={13}>
+                <b>Item:</b> {selected.itemName}
+              </Text>
+              <Text fz={13}>
+                <b>Description:</b> {selected.itemDescription}
+              </Text>
+              <Text fz={13}>
+                <b>Route:</b> {selected.origin} → {selected.destination}
+              </Text>
+              <Text fz={13}>
+                <b>Deadline:</b> {formatDateTime(selected.deliveryDeadline)}
+              </Text>
+              <Text fz={13}>
+                <b>Type / payment:</b> {selected.type} · {selected.paymentType ?? '—'}
+              </Text>
+              <Text fz={13}>
+                <b>Beneficiary:</b> {selected.beneficiaryName ?? '—'} ({selected.beneficiaryType ?? '—'})
+              </Text>
+              <Text fz={13}>
+                <b>Supporting notes:</b> {selected.supportingNotes ?? '—'}
+              </Text>
+              <Text fz={13}>
+                <b>Status:</b> {selected.status} · <b>Admin:</b> {selected.adminApprovalStatus ?? '—'}
+              </Text>
+            </Stack>
+
+            {tab === 'pending_review' ? (
+              <>
+                <Textarea label="Approval notes (optional)" value={approveNotes} onChange={(e) => setApproveNotes(e.currentTarget.value)} />
+                <Textarea label="Rejection notes (required to reject)" value={rejectNotes} onChange={(e) => setRejectNotes(e.currentTarget.value)} />
+                <Group grow>
+                  <Button color="teal" onClick={() => void approve()}>
+                    Approve
+                  </Button>
+                  <Button color="red" variant="outline" onClick={() => void reject()}>
+                    Reject
+                  </Button>
+                </Group>
+              </>
+            ) : null}
+          </Stack>
+        ) : null}
+      </Drawer>
     </Stack>
   );
 }
-
-const approveBtn = {
-  styles: { root: { backgroundColor: AU.successGreen, border: 'none', color: '#fff' } },
-} as const;

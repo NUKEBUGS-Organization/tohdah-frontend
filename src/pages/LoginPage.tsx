@@ -16,30 +16,43 @@ import {
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { IconBrandFacebook } from '@tabler/icons-react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ApiRequestError } from '../api/client';
 import { PublicFooter } from '../components/PublicFooter';
-import { colors } from '../theme';
+import { useAuth } from '../context/AuthContext';
 import { loginAssets } from '../figma/loginAssets';
-
-function validIdentifier(v: string) {
-  const t = v.trim();
-  if (/^\S+@\S+\.\S+$/.test(t)) return null;
-  if (/^[\d\s+()-]{10,}$/.test(t)) return null;
-  return 'Enter a valid email or phone number';
-}
+import { colors } from '../theme';
+import { notify } from '../utils/notify';
 
 export function LoginPage() {
+  const { login } = useAuth();
+  const [loading, setLoading] = useState(false);
+
+  const handleGoogleLogin = (): void => {
+    const base = import.meta.env.VITE_API_BASE_URL ?? '';
+    window.location.href = `${base.replace(/\/$/, '')}/auth/google`;
+  };
+
   const form = useForm({
-    initialValues: { identifier: '', password: '', remember: false },
+    initialValues: { email: '', password: '', remember: false },
     validate: {
-      identifier: validIdentifier,
+      email: (v) => (/^\S+@\S+\.\S+$/.test(v.trim()) ? null : 'Enter a valid email'),
       password: (v) => (v.length < 1 ? 'Required' : null),
     },
   });
 
-  const onValid = () => {
-    // Wire to POST /auth/login when backend is ready
-  };
+  const onSubmit = form.onSubmit(async (values) => {
+    setLoading(true);
+    try {
+      await login(values.email.trim().toLowerCase(), values.password);
+    } catch (e) {
+      const msg = e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : 'Sign in failed';
+      notify.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  });
 
   return (
     <Flex direction="column" mih="100vh" bg="white">
@@ -122,12 +135,7 @@ export function LoginPage() {
           py={48}
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
-          <Box
-            component="form"
-            maw={448}
-            w="100%"
-            onSubmit={form.onSubmit(onValid)}
-          >
+          <Box component="form" maw={448} w="100%" onSubmit={onSubmit}>
             <Stack gap={31}>
               <Stack gap={8}>
                 <Image src={loginAssets.logo} alt="Tohdah" w={40} h={40} fit="contain" />
@@ -141,8 +149,9 @@ export function LoginPage() {
 
               <Stack gap={23}>
                 <TextInput
-                  label="Email or Phone Number"
-                  placeholder="name@company.com or +1 555 000 0000"
+                  label="Email"
+                  placeholder="name@company.com"
+                  type="email"
                   fz={14}
                   styles={{
                     label: { color: colors.mutedText, letterSpacing: 0.28 },
@@ -151,7 +160,7 @@ export function LoginPage() {
                       borderColor: colors.border,
                     },
                   }}
-                  {...form.getInputProps('identifier')}
+                  {...form.getInputProps('email')}
                 />
                 <Stack gap={8}>
                   <PasswordInput
@@ -191,6 +200,7 @@ export function LoginPage() {
                   radius={12}
                   py={17}
                   fz={18}
+                  loading={loading}
                   styles={{
                     root: {
                       background: `linear-gradient(134deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
@@ -224,10 +234,12 @@ export function LoginPage() {
                 <Button
                   variant="default"
                   h={50}
+                  type="button"
                   leftSection={
                     <Image src={loginAssets.google} alt="" w={20} h={20} fit="contain" />
                   }
                   styles={{ root: { borderColor: colors.border } }}
+                  onClick={handleGoogleLogin}
                 >
                   Google
                 </Button>

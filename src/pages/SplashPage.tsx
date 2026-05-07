@@ -72,7 +72,7 @@ export function SplashPage() {
         <Group gap={16} justify="center" wrap="wrap">
           <Button
             component={Link}
-            to="/onboarding/step-1"
+            to="/signup"
             size="lg"
             radius="xl"
             w={{ base: '100%', xs: 200 }}

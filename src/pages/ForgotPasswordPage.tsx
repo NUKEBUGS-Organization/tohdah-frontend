@@ -3,18 +3,40 @@ import {
   Box,
   Button,
   Group,
-  PasswordInput,
   Stack,
   Text,
+  TextInput,
   Title,
 } from '@mantine/core';
+import { useForm } from '@mantine/form';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { api, ApiRequestError } from '../api/client';
 import { PublicFooter } from '../components/PublicFooter';
 import { PrimaryGradientButton } from '../components/ScreenScaffold';
+import { notify } from '../utils/notify';
 import { colors } from '../theme';
 
 export function ForgotPasswordPage() {
+  const navigate = useNavigate();
+  const form = useForm({
+    initialValues: { email: '' },
+    validate: {
+      email: (v) => (/^\S+@\S+\.\S+$/.test(v.trim()) ? null : 'Enter a valid email'),
+    },
+  });
+
+  const onSubmit = form.onSubmit(async (values) => {
+    const email = values.email.trim().toLowerCase();
+    try {
+      await api.post('/auth/forgot-password', { email }, { skipAuth: true });
+      navigate(`/verify-otp?email=${encodeURIComponent(email)}`, { replace: true });
+    } catch (e) {
+      const msg = e instanceof ApiRequestError ? e.message : 'Something went wrong';
+      notify.error(msg);
+    }
+  });
+
   return (
     <FlexColPublic>
       <Box
@@ -40,6 +62,8 @@ export function ForgotPasswordPage() {
 
       <Box py={72} px={24} style={{ flex: 1 }}>
         <Box
+          component="form"
+          onSubmit={onSubmit}
           mx="auto"
           maw={450}
           p={40}
@@ -52,27 +76,22 @@ export function ForgotPasswordPage() {
         >
           <Stack align="stretch" gap="lg">
             <Title order={1} ta="center" fz={28} c={colors.navyDeep}>
-              Reset your password
+              Forgot password
             </Title>
             <Text ta="center" c={colors.mutedText}>
-              Enter your new password below.
+              Enter the email for your account. We&apos;ll send you a verification code.
             </Text>
-            <PasswordInput
-              label="New Password"
-              placeholder="••••••••"
+            <TextInput
+              label="Email"
+              placeholder="you@example.com"
+              type="email"
               styles={{
                 input: { background: colors.inputBg, borderColor: colors.border },
               }}
+              {...form.getInputProps('email')}
             />
-            <PasswordInput
-              label="Confirm New Password"
-              placeholder="••••••••"
-              styles={{
-                input: { background: colors.inputBg, borderColor: colors.border },
-              }}
-            />
-            <PrimaryGradientButton fullWidth radius="md" size="md">
-              Reset Password
+            <PrimaryGradientButton type="submit" fullWidth radius="md" size="md">
+              Send code
             </PrimaryGradientButton>
             <Anchor component={Link} to="/login" fz={14} c={colors.gradientFrom} ta="center">
               ← Back to log in

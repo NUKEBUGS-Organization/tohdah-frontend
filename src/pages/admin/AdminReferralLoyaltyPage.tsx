@@ -1,205 +1,188 @@
-import { Avatar, Badge, Grid, Group, Paper, SimpleGrid, Stack, Table, Text } from '@mantine/core';
-import { adminUi as AU } from '../../theme';
+import {
+  Avatar,
+  Badge,
+  Group,
+  Pagination,
+  Paper,
+  Progress,
+  SimpleGrid,
+  Skeleton,
+  Stack,
+  Table,
+  Tabs,
+  Text,
+  Title,
+} from '@mantine/core';
+import { useState } from 'react';
+import { useApi } from '../../hooks/useApi';
+import { usePagination } from '../../hooks/usePagination';
+import { adminService, type AdminReferralRow } from '../../api/services/admin.service';
+import { formatDate } from './adminHelpers';
 
-const REF_ROWS = [
-  { user: 'Nina Kouassi', referred: 'Luis V.', status: 'Active', comm: '$120' },
-  { user: 'Rowan Kelley', referred: 'Samira A.', status: 'Pending payout', comm: '$0' },
-  { user: 'Imani Brooks', referred: 'Theo Müller', status: 'Active', comm: '$340' },
-  { user: 'Kenji Wu', referred: 'Olivia Tran', status: 'Active', comm: '$55' },
-] as const;
-
-const LEADERBOARD = [
-  { n: 'Imani Brooks', c: '186', avatar: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=96&q=70' },
-  { n: 'Rowan Kelley', c: '142', avatar: 'https://images.unsplash.com/photo-1507591064344-4c6ce005b128?w=96&q=70' },
-  { n: 'Nina Kouassi', c: '128', avatar: 'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=96&q=70' },
-] as const;
-
-const ACTIVITY = [
-  { ts: '10:41', evt: 'Referral payout approved', actor: 'Imani Brooks → Theo Müller', amt: '+$340' },
-  { ts: 'Yesterday', evt: 'Tier upgrade', actor: 'Rowan Kelley → Silver', amt: '' },
-  { ts: 'May 03', evt: 'Code redeemed', actor: 'WELCOME24 batch #882', amt: '+24 users' },
-] as const;
+function tierFromPoints(points: number): { label: string; color: string } {
+  if (points >= 500) return { label: 'Gold', color: 'yellow' };
+  if (points >= 100) return { label: 'Silver', color: 'gray' };
+  return { label: 'Bronze', color: 'orange' };
+}
 
 export function AdminReferralLoyaltyPage() {
+  const [tab, setTab] = useState<string | null>('referrals');
+  const { page, limit, setPage } = usePagination(20);
+
+  const { data: refData, isLoading: refLoading } = useApi(
+    () => adminService.getReferrals({ page, limit }),
+    [page, limit],
+  );
+
+  const { data: loyalty, isLoading: loyLoading } = useApi(() => adminService.getLoyalty(), []);
+
+  const refRows = refData?.data ?? [];
+  const refTotalPages = Math.max(1, Math.ceil((refData?.total ?? 0) / limit));
+
+  const tiers = loyalty?.tiers ?? [];
+  const maxTier = Math.max(1, ...tiers.map((t) => t.count));
+
   return (
     <Stack gap="lg">
-      <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
-        {[
-          { t: 'Total referrals', v: '12,482' },
-          { t: 'Active referrals', v: '5,123' },
-          { t: 'Total commissions', v: '$642,500' },
-        ].map((c) => (
-          <Paper key={c.t} p="xl" radius="md" withBorder shadow="xs" bg="#fff">
-            <Text fz={12} fw={700} tt="uppercase" c="dimmed" mb={6}>
-              {c.t}
-            </Text>
-            <Text fz={{ base: 28, md: 34 }} fw={900} lh={1.1}>
-              {c.v}
-            </Text>
-          </Paper>
-        ))}
-      </SimpleGrid>
+      <Title order={2} fz={24} fw={800}>
+        Referrals & loyalty
+      </Title>
 
-      <Grid gap="md">
-        <Grid.Col span={{ base: 12, xl: 8 }}>
-          <Paper p={0} radius="md" withBorder shadow="xs" bg="#fff" mb="md">
-            <Group justify="space-between" px="lg" py="md" style={{ borderBottom: '1px solid #eceef3' }}>
-              <Text fw={700} fz={15}>
-                Recent referrals
-              </Text>
-              <Badge variant="outline" color="gray" size="sm">
-                Paid + pending
-              </Badge>
-            </Group>
-            <Table verticalSpacing="md" horizontalSpacing="lg">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Referrer
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Invite
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Status
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase" ta="right">
-                    Commission
-                  </Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {REF_ROWS.map((row) => (
-                  <Table.Tr key={row.user}>
-                    <Table.Td fw={700} fz={14}>
-                      {row.user}
-                    </Table.Td>
-                    <Table.Td fz={14} c="dimmed">
-                      {row.referred}
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge color={row.status === 'Active' ? 'green' : 'orange'} variant="light" size="sm">
-                        {row.status}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td fz={14} fw={800} ta="right">
-                      {row.comm}
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Paper>
+      <Tabs value={tab} onChange={(v) => {
+        setTab(v);
+        setPage(1);
+      }}>
+        <Tabs.List>
+          <Tabs.Tab value="referrals">Referrals</Tabs.Tab>
+          <Tabs.Tab value="loyalty">Loyalty</Tabs.Tab>
+        </Tabs.List>
 
-          <Paper p="lg" radius="md" withBorder shadow="xs" bg="#fff">
-            <Text fw={700} fz={15} mb="md">
-              Loyalty tier overview
-            </Text>
-            <SimpleGrid cols={{ base: 1, md: 3 }}>
-              {[
-                {
-                  name: 'Bronze',
-                  need: '0–4 completed referrals',
-                  perk: 'Base commission rate · email digests',
-                  color: '#b45309',
-                },
-                {
-                  name: 'Silver',
-                  need: '5–14 completions / quarter',
-                  perk: '+8% accelerator · expedited payouts',
-                  color: '#64748b',
-                },
-                {
-                  name: 'Gold',
-                  need: '15+ completions · NPS gate',
-                  perk: '+15% accelerator · concierge support lane',
-                  color: '#ca8a04',
-                },
-              ].map((t) => (
-                <Paper key={t.name} p="lg" radius="md" bg={AU.pageBg} style={{ borderTop: `3px solid ${t.color}` }}>
-                  <Text fz={13} fw={900} tt="uppercase" mb={6} style={{ color: t.color }}>
-                    {t.name}
-                  </Text>
-                  <Text fz={13} fw={600} mb={8}>
-                    {t.need}
-                  </Text>
-                  <Text fz={12} c="dimmed">
-                    {t.perk}
-                  </Text>
-                </Paper>
-              ))}
-            </SimpleGrid>
-          </Paper>
-
-          <Paper p={0} radius="md" withBorder shadow="xs" bg="#fff" mt="md">
-            <Text fw={700} fz={15} px="lg" py="md" style={{ borderBottom: '1px solid #eceef3' }}>
-              Recent activity
-            </Text>
-            <Table>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Time
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Event
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase">
-                    Subject
-                  </Table.Th>
-                  <Table.Th fz={11} fw={700} tt="uppercase" ta="right">
-                    Delta
-                  </Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {ACTIVITY.map((a) => (
-                  <Table.Tr key={a.evt}>
-                    <Table.Td fz={13} c="dimmed">
-                      {a.ts}
-                    </Table.Td>
-                    <Table.Td fz={13} fw={700}>
-                      {a.evt}
-                    </Table.Td>
-                    <Table.Td fz={13}>
-                      {a.actor}
-                    </Table.Td>
-                    <Table.Td fz={13} fw={700} ta="right">
-                      {a.amt || '—'}
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Paper>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, xl: 4 }}>
-          <Paper p="lg" radius="md" withBorder shadow="xs" bg="#fff" style={{ position: 'sticky', top: 88 }}>
-            <Text fw={700} fz={15} mb="md">
-              Top referrers
-            </Text>
-            <Stack gap={0}>
-              {LEADERBOARD.map((row, idx) => (
-                <Group key={row.n} gap="sm" wrap="nowrap" mb="lg">
-                  <Text fw={900} fz={18} w={28} c="dimmed">
-                    #{idx + 1}
-                  </Text>
-                  <Avatar src={row.avatar} radius="xl" />
-                  <div style={{ flex: 1 }}>
-                    <Text fz={14} fw={700}>
-                      {row.n}
-                    </Text>
-                    <Text fz={12} c="dimmed">
-                      {row.c} referrals
-                    </Text>
-                  </div>
-                </Group>
+        <Tabs.Panel value="referrals" pt="md">
+          {refLoading ? (
+            <Stack gap="sm">
+              {[1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} height={40} />
               ))}
             </Stack>
-          </Paper>
-        </Grid.Col>
-      </Grid>
+          ) : refRows.length === 0 ? (
+            <Text c="dimmed">No referred users yet.</Text>
+          ) : (
+            <Paper radius="md" withBorder>
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>User</Table.Th>
+                    <Table.Th>Email</Table.Th>
+                    <Table.Th>Referred by</Table.Th>
+                    <Table.Th>Join date</Table.Th>
+                    <Table.Th ta="right">Points</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {refRows.map((r: AdminReferralRow) => {
+                    const rb =
+                      r.referredBy && typeof r.referredBy === 'object'
+                        ? `${(r.referredBy as { fullName?: string }).fullName ?? ''} · ${(r.referredBy as { email?: string }).email ?? ''}`
+                        : '—';
+                    return (
+                      <Table.Tr key={r.id}>
+                        <Table.Td fw={700}>{r.fullName}</Table.Td>
+                        <Table.Td fz={13} c="dimmed">
+                          {r.email}
+                        </Table.Td>
+                        <Table.Td fz={13}>{rb}</Table.Td>
+                        <Table.Td fz={13}>{formatDate(r.createdAt)}</Table.Td>
+                        <Table.Td fz={13} ta="right">
+                          {r.loyaltyPoints ?? 0}
+                        </Table.Td>
+                      </Table.Tr>
+                    );
+                  })}
+                </Table.Tbody>
+              </Table>
+              <Group justify="center" py="md">
+                <Pagination total={refTotalPages} value={page} onChange={setPage} size="sm" />
+              </Group>
+            </Paper>
+          )}
+        </Tabs.Panel>
+
+        <Tabs.Panel value="loyalty" pt="md">
+          {loyLoading || !loyalty ? (
+            <Stack gap="sm">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} height={80} />
+              ))}
+            </Stack>
+          ) : (
+            <>
+              <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md" mb="lg">
+                {['bronze', 'silver', 'gold'].map((tierName) => {
+                  const row = tiers.find((t) => t.tier === tierName) ?? { tier: tierName, count: 0 };
+                  const color = tierName === 'gold' ? 'yellow' : tierName === 'silver' ? 'gray' : 'orange';
+                  return (
+                    <Paper key={tierName} p="lg" radius="md" withBorder>
+                      <Text fz={12} fw={700} tt="uppercase" c="dimmed">
+                        {tierName}
+                      </Text>
+                      <Text fz={28} fw={800}>
+                        {row.count}
+                      </Text>
+                      <Progress value={(row.count / maxTier) * 100} color={color} mt="md" size="lg" />
+                    </Paper>
+                  );
+                })}
+              </SimpleGrid>
+
+              <Paper radius="md" withBorder p={0}>
+                <Text fw={700} px="lg" py="md" style={{ borderBottom: '1px solid #eceef3' }}>
+                  Top users by points
+                </Text>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>#</Table.Th>
+                      <Table.Th>User</Table.Th>
+                      <Table.Th>Email</Table.Th>
+                      <Table.Th ta="right">Points</Table.Th>
+                      <Table.Th>Tier</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {(loyalty.topUsers ?? []).map((u, idx) => {
+                      const t = tierFromPoints(u.points);
+                      return (
+                        <Table.Tr key={`${u.email}-${idx}`}>
+                          <Table.Td>{idx + 1}</Table.Td>
+                          <Table.Td>
+                            <Group gap="sm">
+                              <Avatar radius="xl" size={32}>
+                                {u.fullName?.charAt(0)}
+                              </Avatar>
+                              <Text fw={600}>{u.fullName}</Text>
+                            </Group>
+                          </Table.Td>
+                          <Table.Td fz={13} c="dimmed">
+                            {u.email}
+                          </Table.Td>
+                          <Table.Td ta="right" fw={700}>
+                            {u.points}
+                          </Table.Td>
+                          <Table.Td>
+                            <Badge color={t.color} variant="light">
+                              {t.label}
+                            </Badge>
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+              </Paper>
+            </>
+          )}
+        </Tabs.Panel>
+      </Tabs>
     </Stack>
   );
 }

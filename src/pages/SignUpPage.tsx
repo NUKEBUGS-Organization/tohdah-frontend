@@ -18,8 +18,10 @@ import {
 import { IconBrandFacebook } from '@tabler/icons-react';
 import { useForm } from '@mantine/form';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { registerUser } from '../api/client';
+import { Link, useNavigate } from 'react-router-dom';
+import { api, ApiRequestError } from '../api/client';
+import type { AuthResponse, RegisterResponse } from '../api/types';
+import { useAuth } from '../context/AuthContext';
 import { signupAssets } from '../figma/signupAssets';
 import { colors } from '../theme';
 
@@ -35,9 +37,15 @@ function TrustItem({ icon, label }: { icon: string; label: string }) {
 }
 
 export function SignUpPage() {
+  const navigate = useNavigate();
+  const { applyTokens } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+
+  const handleGoogleSignup = (): void => {
+    const base = import.meta.env.VITE_API_BASE_URL ?? '';
+    window.location.href = `${base.replace(/\/$/, '')}/auth/google`;
+  };
 
   const form = useForm({
     initialValues: {
@@ -63,20 +71,36 @@ export function SignUpPage() {
 
   const handleSubmit = form.onSubmit(async (values) => {
     setError(null);
-    setDone(null);
     setSubmitting(true);
+    const email = values.email.trim().toLowerCase();
+    const phoneNumber = `${values.countryCode} ${values.phoneLine}`.trim();
     try {
-      const phoneNumber = `${values.countryCode} ${values.phoneLine}`.trim();
-      const res = await registerUser({
-        fullName: values.fullName.trim(),
-        email: values.email.trim(),
-        phoneNumber,
-        password: values.password,
-      });
-      setDone(`Welcome, ${res.fullName}. You can sign in once login is ready.`);
-      form.reset();
+      await api.post<RegisterResponse>(
+        '/auth/register',
+        {
+          fullName: values.fullName.trim(),
+          email,
+          phoneNumber,
+          password: values.password,
+        },
+        { skipAuth: true },
+      );
+      const auth = await api.post<AuthResponse>(
+        '/auth/login',
+        {
+          email,
+          password: values.password,
+        },
+        { skipAuth: true },
+      );
+      await applyTokens(auth.accessToken, auth.refreshToken);
+      navigate('/onboarding/step-1', { replace: true });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      if (e instanceof ApiRequestError && e.statusCode === 409) {
+        setError('An account with this email already exists.');
+      } else {
+        setError(e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : 'Something went wrong');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -212,12 +236,6 @@ export function SignUpPage() {
                 {error}
               </Alert>
             ) : null}
-            {done ? (
-              <Alert color="teal" title="Account created">
-                {done}
-              </Alert>
-            ) : null}
-
             <Stack gap={24}>
               <TextInput
                 label="Full Name"
@@ -372,9 +390,7 @@ export function SignUpPage() {
                     fit="contain"
                   />
                 }
-                onClick={() =>
-                  setError('Google sign-in is not wired yet — use email registration.')
-                }
+                onClick={handleGoogleSignup}
               >
                 Google
               </Button>

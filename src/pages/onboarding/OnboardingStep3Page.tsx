@@ -5,24 +5,32 @@ import {
   IconShoppingBag,
 } from '@tabler/icons-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api, ApiRequestError } from '../../api/client';
+import type { OnboardingStepResponse } from '../../api/types';
+import { useAuth } from '../../context/AuthContext';
+import { notify } from '../../utils/notify';
 import { colors } from '../../theme';
 import { OnboardingChrome } from './OnboardingChrome';
 
 const roles = [
   {
     key: 'traveler',
+    apiType: 'traveler' as const,
     title: 'Traveler',
     body: 'I want to earn money while traveling.',
     icon: IconPlaneDeparture,
   },
   {
     key: 'sender',
+    apiType: 'requester' as const,
     title: 'Sender',
     body: 'I want to get items delivered.',
     icon: IconShoppingBag,
   },
   {
     key: 'both',
+    apiType: 'both' as const,
     title: 'Both',
     body: 'I want to do both.',
     icon: IconArrowsExchange,
@@ -30,7 +38,30 @@ const roles = [
 ] as const;
 
 export function OnboardingStep3Page() {
+  const navigate = useNavigate();
+  const { refreshUser } = useAuth();
   const [selected, setSelected] = useState<string | null>('traveler');
+
+  const completeStep3 = async () => {
+    const role = roles.find((r) => r.key === selected);
+    if (!role) {
+      notify.error('Choose how you will use Tohdah');
+      return;
+    }
+    try {
+      const res = await api.post<OnboardingStepResponse>('/onboarding/step', {
+        step: 3,
+        accountType: role.apiType,
+      });
+      if (!res) return;
+      await refreshUser();
+      navigate('/onboarding/profile');
+    } catch (e) {
+      const msg =
+        e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : 'Could not save progress';
+      notify.error(msg);
+    }
+  };
 
   return (
     <OnboardingChrome
@@ -38,7 +69,7 @@ export function OnboardingStep3Page() {
       title="How will you use Tohdah?"
       subtitle="Choose what fits today—you can switch anytime in settings."
       prevTo="/onboarding/step-2"
-      nextTo="/onboarding/profile"
+      onNext={completeStep3}
       nextLabel="Next"
     >
       <SimpleGrid cols={{ base: 1, md: 3 }} spacing="lg">

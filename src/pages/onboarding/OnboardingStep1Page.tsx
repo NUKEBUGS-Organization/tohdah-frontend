@@ -4,6 +4,11 @@ import {
   IconPlaneTilt,
   IconRoute,
 } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
+import { api, ApiRequestError } from '../../api/client';
+import type { OnboardingStepResponse } from '../../api/types';
+import { useAuth } from '../../context/AuthContext';
+import { notify } from '../../utils/notify';
 import { colors } from '../../theme';
 import { OnboardingChrome } from './OnboardingChrome';
 
@@ -26,12 +31,28 @@ const cards = [
 ] as const;
 
 export function OnboardingStep1Page() {
+  const navigate = useNavigate();
+  const { refreshUser } = useAuth();
+
+  const completeStep1 = async () => {
+    try {
+      const res = await api.post<OnboardingStepResponse>('/onboarding/step', { step: 1 });
+      if (!res) return;
+      await refreshUser();
+      navigate('/onboarding/step-2');
+    } catch (e) {
+      const msg =
+        e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : 'Could not save progress';
+      notify.error(msg);
+    }
+  };
+
   return (
     <OnboardingChrome
       step={1}
       title="Here's how Tohdah works."
       subtitle="Three simple steps connect senders and travelers worldwide."
-      nextTo="/onboarding/step-2"
+      onNext={completeStep1}
       nextLabel="Next"
     >
       <Stack gap="xl">

@@ -1,5 +1,10 @@
 import { Box, Group, SimpleGrid, Stack, Text, ThemeIcon } from '@mantine/core';
 import { IconCheck } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
+import { api, ApiRequestError } from '../../api/client';
+import type { OnboardingStepResponse } from '../../api/types';
+import { useAuth } from '../../context/AuthContext';
+import { notify } from '../../utils/notify';
 import { colors } from '../../theme';
 import { OnboardingChrome } from './OnboardingChrome';
 
@@ -16,13 +21,29 @@ const rightBullets = [
 ];
 
 export function OnboardingStep2Page() {
+  const navigate = useNavigate();
+  const { refreshUser } = useAuth();
+
+  const completeStep2 = async () => {
+    try {
+      const res = await api.post<OnboardingStepResponse>('/onboarding/step', { step: 2 });
+      if (!res) return;
+      await refreshUser();
+      navigate('/onboarding/step-3');
+    } catch (e) {
+      const msg =
+        e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : 'Could not save progress';
+      notify.error(msg);
+    }
+  };
+
   return (
     <OnboardingChrome
       step={2}
       title="Safety comes first."
       subtitle="We combine verified identities with secure payments so both sides can trust the journey."
       prevTo="/onboarding/step-1"
-      nextTo="/onboarding/step-3"
+      onNext={completeStep2}
       nextLabel="Next"
       actionsJustify="flex-end"
     >

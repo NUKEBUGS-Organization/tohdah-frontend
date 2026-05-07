@@ -1,5 +1,5 @@
 import { Box, Button, Group, Progress, Stack, Text } from '@mantine/core';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { colors } from '../../theme';
 
@@ -8,7 +8,10 @@ type OnboardingChromeProps = {
   title: string;
   subtitle?: string;
   children: ReactNode;
+  /** Client-side navigation when not using `onNext`. */
   nextTo?: string;
+  /** Call API then navigate from the handler (preferred for wired flows). */
+  onNext?: () => Promise<void>;
   prevTo?: string;
   nextLabel?: string;
   /** Align primary action (e.g. step 2 = end) */
@@ -21,12 +24,32 @@ export function OnboardingChrome({
   subtitle,
   children,
   nextTo,
+  onNext,
   prevTo,
   nextLabel = 'Next',
   actionsJustify = 'center',
 }: OnboardingChromeProps) {
   const navigate = useNavigate();
+  const [nextLoading, setNextLoading] = useState(false);
   const pct = step === 1 ? 33 : step === 2 ? 66 : 100;
+
+  const handleNext = async () => {
+    if (!onNext) return;
+    setNextLoading(true);
+    try {
+      await onNext();
+    } finally {
+      setNextLoading(false);
+    }
+  };
+
+  const nextButtonStyles = {
+    root: {
+      background: `linear-gradient(134deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
+      border: 'none',
+      minWidth: 160,
+    },
+  } as const;
 
   return (
     <Box mih="100vh" bg="#f8fafc">
@@ -75,18 +98,12 @@ export function OnboardingChrome({
               Back
             </Button>
           ) : null}
-          {nextTo ? (
-            <Button
-              component={Link}
-              to={nextTo}
-              styles={{
-                root: {
-                  background: `linear-gradient(134deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
-                  border: 'none',
-                  minWidth: 160,
-                },
-              }}
-            >
+          {onNext ? (
+            <Button onClick={() => void handleNext()} loading={nextLoading} styles={nextButtonStyles}>
+              {nextLabel}
+            </Button>
+          ) : nextTo ? (
+            <Button component={Link} to={nextTo} styles={nextButtonStyles}>
               {nextLabel}
             </Button>
           ) : null}
