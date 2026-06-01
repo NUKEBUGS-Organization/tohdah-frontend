@@ -1,7 +1,7 @@
-import { Box, Button, Center, Group, Image, Stack, Text, Title, UnstyledButton } from '@mantine/core';
+import { Box, Button, Center, Group, Stack, Text, Title, UnstyledButton } from '@mantine/core';
 import { IconArrowRight, IconBrandFacebook, IconBrandInstagram, IconBrandX } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
-import { splashAssets } from '../figma/splashAssets';
+import { BrandWordmark } from '../components/BrandWordmark';
 import { colors } from '../theme';
 
 export function SplashPage() {
@@ -22,28 +22,19 @@ export function SplashPage() {
       <Box
         pos="absolute"
         inset={0}
-        opacity={0.2}
+        opacity={0.15}
         style={{
           pointerEvents: 'none',
-          mixBlendMode: 'soft-light',
-          backgroundImage: `url(${splashAssets.mapTexture})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
+          backgroundImage: `
+            radial-gradient(circle at 20% 30%, rgba(0,201,167,0.08) 0%, transparent 40%),
+            radial-gradient(circle at 80% 70%, rgba(45,134,255,0.1) 0%, transparent 45%)
+          `,
         }}
       />
 
       <Stack align="center" gap={0} pos="relative" maw={672} mx="auto">
         <Box mb={40}>
-          <Image
-            src={splashAssets.logo}
-            alt="Tohdah"
-            w={96}
-            h={96}
-            radius="md"
-            style={{
-              boxShadow: '0 25px 25px rgba(0,0,0,0.15)',
-            }}
-          />
+          <BrandWordmark fz={48} />
         </Box>
 
         <Stack align="center" gap={20} mb={40}>

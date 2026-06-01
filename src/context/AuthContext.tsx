@@ -21,6 +21,7 @@ import {
   onForegroundMessage,
   requestNotificationPermission,
 } from '../lib/firebase';
+import { disconnectSocket } from '../lib/socket';
 import { usersService } from '../api/services';
 import { notify } from '../utils/notify';
 
@@ -147,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     clearTokens();
     setUser(null);
+    disconnectSocket();
     navigate('/login', { replace: true });
   }, [navigate]);
 

@@ -12,7 +12,7 @@ import {
   TextInput,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconPlus } from '@tabler/icons-react';
+import { IconMapPin, IconPlus, IconUser } from '@tabler/icons-react';
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiRequestError } from '../../api/client';
@@ -151,6 +151,8 @@ export function ProfileSetupPage() {
           <Stack gap="md" style={{ flex: 1, minWidth: 280 }}>
             <TextInput
               label="Full name"
+              leftSection={<IconUser size={16} stroke={1.5} />}
+              leftSectionPointerEvents="none"
               styles={{ input: { borderColor: colors.border } }}
               {...form.getInputProps('fullName')}
             />
@@ -164,6 +166,8 @@ export function ProfileSetupPage() {
             <TextInput
               label="Location"
               placeholder="City, country"
+              leftSection={<IconMapPin size={16} stroke={1.5} />}
+              leftSectionPointerEvents="none"
               styles={{ input: { borderColor: colors.border } }}
               {...form.getInputProps('location')}
             />

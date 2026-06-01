@@ -9,11 +9,13 @@ import {
   Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import type { ReactNode } from 'react';
+import { IconMail } from '@tabler/icons-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiRequestError } from '../api/client';
-import { PublicFooter } from '../components/PublicFooter';
+import type { ReactNode } from 'react';
+import { BrandWordmark } from '../components/BrandWordmark';
 import { PrimaryGradientButton } from '../components/ScreenScaffold';
+import { PublicFooter } from '../components/PublicFooter';
 import { notify } from '../utils/notify';
 import { colors } from '../theme';
 
@@ -46,9 +48,7 @@ export function ForgotPasswordPage() {
         style={{ borderBottom: '1px solid #e2e8f0' }}
       >
         <Group justify="space-between">
-          <Text fw={700} fz={18} c={colors.navyDeep}>
-            Tohdah
-          </Text>
+          <BrandWordmark fz={18} />
           <Group gap="sm">
             <Button component={Link} to="/login" variant="default" size="sm">
               Log in
@@ -85,6 +85,8 @@ export function ForgotPasswordPage() {
               label="Email"
               placeholder="you@example.com"
               type="email"
+              leftSection={<IconMail size={16} stroke={1.5} />}
+              leftSectionPointerEvents="none"
               styles={{
                 input: { background: colors.inputBg, borderColor: colors.border },
               }}

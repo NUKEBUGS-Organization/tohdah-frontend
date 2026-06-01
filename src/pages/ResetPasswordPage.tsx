@@ -1,6 +1,7 @@
 import { Anchor, Box, PasswordInput, Stack, Text, Title } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useEffect } from 'react';
+import { IconLock } from '@tabler/icons-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, ApiRequestError } from '../api/client';
 import { PrimaryGradientButton } from '../components/ScreenScaffold';
@@ -82,12 +83,16 @@ export function ResetPasswordPage() {
           <PasswordInput
             label="New password"
             placeholder="••••••••"
+            leftSection={<IconLock size={16} stroke={1.5} />}
+            leftSectionPointerEvents="none"
             styles={{ input: { background: colors.inputBg, borderColor: colors.border } }}
             {...form.getInputProps('newPassword')}
           />
           <PasswordInput
             label="Confirm password"
             placeholder="••••••••"
+            leftSection={<IconLock size={16} stroke={1.5} />}
+            leftSectionPointerEvents="none"
             styles={{ input: { background: colors.inputBg, borderColor: colors.border } }}
             {...form.getInputProps('confirmPassword')}
           />

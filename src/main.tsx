@@ -7,6 +7,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
+import { SocketProvider } from './context/SocketContext.tsx';
 import { appTheme } from './theme.ts';
 import './index.css';
 
@@ -16,7 +17,9 @@ createRoot(document.getElementById('root')!).render(
       <Notifications position="top-right" zIndex={4000} />
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <SocketProvider>
+            <App />
+          </SocketProvider>
         </AuthProvider>
       </BrowserRouter>
     </MantineProvider>

@@ -290,7 +290,7 @@ export function SettingsHelpCenterPage() {
         <Accordion.Item value="pay">
           <Accordion.Control>Payments</Accordion.Control>
           <Accordion.Panel>
-            Payments are processed through a secure stub in development. Production will use a licensed provider.
+            Card payments are processed securely via Stripe when you confirm a booking. Your card details are handled by Stripe and are not stored on Tohdah servers.
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>

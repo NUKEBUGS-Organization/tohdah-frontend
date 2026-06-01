@@ -13,7 +13,7 @@ import {
   Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconShieldLock } from '@tabler/icons-react';
+import { IconLock, IconMail, IconShieldLock } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { adminUi as AU } from '../../theme';
 
@@ -79,12 +79,16 @@ export function AdminLoginPage() {
                 label="Email address"
                 placeholder="you@organization.com"
                 radius="md"
+                leftSection={<IconMail size={16} stroke={1.5} />}
+                leftSectionPointerEvents="none"
                 {...form.getInputProps('email')}
               />
               <PasswordInput
                 label="Password"
                 placeholder="••••••••"
                 radius="md"
+                leftSection={<IconLock size={16} stroke={1.5} />}
+                leftSectionPointerEvents="none"
                 {...form.getInputProps('password')}
               />
               <Checkbox label="Remember me" {...form.getInputProps('remember', { type: 'checkbox' })} />

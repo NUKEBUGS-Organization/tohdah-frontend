@@ -485,9 +485,9 @@ export function PaymentMethodsPage() {
   return (
     <Stack maw={560}>
       <Title order={2}>Payment methods</Title>
-      <Alert color="blue" title="Coming soon">
-        Payment provider integration is not enabled yet. Card and bank linking will appear here in a future
-        release.
+      <Alert color="blue" title="Payment methods">
+        Card payments are processed securely via Stripe. To update your payment method, use the checkout flow
+        when confirming a booking.
       </Alert>
       <TextInput label="Card (disabled)" disabled placeholder="4242…" />
       <Button disabled type="button">

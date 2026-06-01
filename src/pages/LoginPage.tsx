@@ -6,7 +6,6 @@ import {
   Divider,
   Flex,
   Group,
-  Image,
   PasswordInput,
   SimpleGrid,
   Stack,
@@ -15,15 +14,44 @@ import {
   Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconBrandFacebook } from '@tabler/icons-react';
-import { useState } from 'react';
+import {
+  IconBrandApple,
+  IconLock,
+  IconMail,
+  IconPackage,
+  IconPlaneTilt,
+  IconWorld,
+} from '@tabler/icons-react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiRequestError } from '../api/client';
+import { BrandWordmark } from '../components/BrandWordmark';
 import { PublicFooter } from '../components/PublicFooter';
 import { useAuth } from '../context/AuthContext';
-import { loginAssets } from '../figma/loginAssets';
 import { colors } from '../theme';
 import { notify } from '../utils/notify';
+
+function LoginFeature({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Stack gap={6} align="center" maw={280}>
+      {icon}
+      <Text ta="center" c="white" fz={16} fw={700}>
+        {title}
+      </Text>
+      <Text ta="center" c="rgba(255,255,255,0.55)" fz={14} lh={1.5}>
+        {description}
+      </Text>
+    </Stack>
+  );
+}
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -47,12 +75,25 @@ export function LoginPage() {
     try {
       await login(values.email.trim().toLowerCase(), values.password);
     } catch (e) {
-      const msg = e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : 'Sign in failed';
+      const msg =
+        e instanceof ApiRequestError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Sign in failed';
       notify.error(msg);
     } finally {
       setLoading(false);
     }
   });
+
+  const inputStyles = {
+    label: { color: colors.mutedText, letterSpacing: 0.28 },
+    input: {
+      background: '#f2f4f6',
+      borderColor: colors.border,
+    },
+  } as const;
 
   return (
     <Flex direction="column" mih="100vh" bg="white">
@@ -62,13 +103,22 @@ export function LoginPage() {
           flex={1}
           py={48}
           px={48}
-          mih={{ base: 360, md: 'auto' }}
+          mih={{ base: 420, md: 'auto' }}
           style={{
-            backgroundColor: colors.navyBg,
+            backgroundColor: '#1E2A4A',
             overflow: 'hidden',
           }}
         >
-          <Box pos="absolute" inset={0} opacity={0.2} style={{ pointerEvents: 'none' }}>
+          <Box
+            pos="absolute"
+            inset={0}
+            style={{
+              pointerEvents: 'none',
+              background:
+                'linear-gradient(135deg, rgba(0,201,167,0.15) 0%, rgba(75,145,255,0.2) 100%)',
+            }}
+          />
+          <Box pos="absolute" inset={0} opacity={0.25} style={{ pointerEvents: 'none' }}>
             <Box
               pos="absolute"
               top={-96}
@@ -77,7 +127,7 @@ export function LoginPage() {
               h={384}
               style={{
                 borderRadius: 9999,
-                background: '#5ffbd6',
+                background: '#00C9A7',
                 filter: 'blur(32px)',
               }}
             />
@@ -100,32 +150,32 @@ export function LoginPage() {
             mx="auto"
             align="center"
             justify="center"
-            gap={7}
-            mih={{ base: 280, md: '100%' }}
+            gap="xl"
+            mih={{ base: 360, md: '100%' }}
           >
-            <Box
-              maw="100%"
-              style={{
-                aspectRatio: '1 / 1',
-                boxShadow: '0 25px 25px rgba(0,0,0,0.15)',
-                borderRadius: 8,
-                overflow: 'hidden',
-              }}
-            >
-              <Image
-                src={loginAssets.travelIllustration}
-                alt=""
-                w="100%"
-                h="100%"
-                fit="cover"
-              />
-            </Box>
-            <Title order={2} ta="center" c="white" fz={{ base: 28, sm: 40 }} fw={600}>
+            <Title order={2} ta="center" c="white" fz={{ base: 24, sm: 28 }} fw={700}>
               Seamless Global Logistics
             </Title>
-            <Text ta="center" c={colors.slate} fz={{ base: 16, sm: 18 }} maw={508} lh={1.6}>
+            <Text ta="center" c={colors.slate} fz={{ base: 15, sm: 16 }} maw={420} lh={1.6}>
               Your gateway to a world of possibilities.
             </Text>
+            <Stack gap="xl" mt="md">
+              <LoginFeature
+                icon={<IconPlaneTilt size={32} color="#00C9A7" />}
+                title="Travel & Earn"
+                description="Monetize empty luggage space on every trip."
+              />
+              <LoginFeature
+                icon={<IconPackage size={32} color="#00C9A7" />}
+                title="Ship with Trust"
+                description="Verified travelers deliver your items safely."
+              />
+              <LoginFeature
+                icon={<IconWorld size={32} color="#00C9A7" />}
+                title="Global Network"
+                description="Connect with senders and travelers worldwide."
+              />
+            </Stack>
           </Stack>
         </Box>
 
@@ -138,7 +188,7 @@ export function LoginPage() {
           <Box component="form" maw={448} w="100%" onSubmit={onSubmit}>
             <Stack gap={31}>
               <Stack gap={8}>
-                <Image src={loginAssets.logo} alt="Tohdah" w={40} h={40} fit="contain" />
+                <BrandWordmark fz={28} />
                 <Title order={1} fz={40} fw={600} c={colors.navyDeep} lh={1.2}>
                   Welcome back
                 </Title>
@@ -153,13 +203,9 @@ export function LoginPage() {
                   placeholder="name@company.com"
                   type="email"
                   fz={14}
-                  styles={{
-                    label: { color: colors.mutedText, letterSpacing: 0.28 },
-                    input: {
-                      background: '#f2f4f6',
-                      borderColor: colors.border,
-                    },
-                  }}
+                  leftSection={<IconMail size={16} stroke={1.5} />}
+                  leftSectionPointerEvents="none"
+                  styles={inputStyles}
                   {...form.getInputProps('email')}
                 />
                 <Stack gap={8}>
@@ -167,13 +213,9 @@ export function LoginPage() {
                     label="Password"
                     placeholder="••••••••"
                     fz={14}
-                    styles={{
-                      label: { color: colors.mutedText, letterSpacing: 0.28 },
-                      input: {
-                        background: '#f2f4f6',
-                        borderColor: colors.border,
-                      },
-                    }}
+                    leftSection={<IconLock size={16} stroke={1.5} />}
+                    leftSectionPointerEvents="none"
+                    styles={inputStyles}
                     {...form.getInputProps('password')}
                   />
                   <Group justify="space-between" wrap="nowrap" gap="xs">
@@ -230,13 +272,18 @@ export function LoginPage() {
                 </Box>
               </Box>
 
-              <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm" pt={1}>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm" pt={1}>
                 <Button
                   variant="default"
                   h={50}
                   type="button"
                   leftSection={
-                    <Image src={loginAssets.google} alt="" w={20} h={20} fit="contain" />
+                    <img
+                      src="https://www.google.com/favicon.ico"
+                      width={16}
+                      height={16}
+                      alt=""
+                    />
                   }
                   styles={{ root: { borderColor: colors.border } }}
                   onClick={handleGoogleLogin}
@@ -246,20 +293,12 @@ export function LoginPage() {
                 <Button
                   variant="default"
                   h={50}
-                  leftSection={
-                    <Image src={loginAssets.apple} alt="" w={16} h={10} fit="contain" />
-                  }
+                  type="button"
+                  leftSection={<IconBrandApple size={16} />}
                   styles={{ root: { borderColor: colors.border } }}
+                  onClick={() => notify.info('Apple sign-in is not wired yet — use email login.')}
                 >
                   Apple
-                </Button>
-                <Button
-                  variant="default"
-                  h={50}
-                  leftSection={<IconBrandFacebook size={20} />}
-                  styles={{ root: { borderColor: colors.border } }}
-                >
-                  Facebook
                 </Button>
               </SimpleGrid>
 

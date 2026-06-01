@@ -16,19 +16,29 @@ import {
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { IconSend } from '@tabler/icons-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Booking, Message, Notification } from '../../../api/types';
 import { api } from '../../../api/client';
 import { bookingsService } from '../../../api/services/bookings.service';
-import { chatService } from '../../../api/services/chat.service';
+import { chatService, type ConversationSummary } from '../../../api/services/chat.service';
 import { notificationsService } from '../../../api/services/notifications.service';
 import { reviewsService } from '../../../api/services/reviews.service';
 import { trustService } from '../../../api/services/trust.service';
 import { usersService } from '../../../api/services/users.service';
 import { useAuth } from '../../../context/AuthContext';
+import { useSocket } from '../../../context/SocketContext';
 import { useApi } from '../../../hooks/useApi';
 import { notify } from '../../../utils/notify';
+
+function messageBookingId(message: Message): string {
+  const bid = message.bookingId;
+  if (typeof bid === 'string') return bid;
+  if (bid && typeof bid === 'object' && '_id' in bid) {
+    return String((bid as { _id: string })._id);
+  }
+  return String(bid);
+}
 function bidFromLoc(loc: ReturnType<typeof useLocation>, sp: URLSearchParams): string | null {
   const st = loc.state as { bookingId?: string } | null;
   if (st?.bookingId) return st.bookingId;
@@ -54,22 +64,37 @@ export function TrackingLivePage() {
   const location = useLocation();
   const [sp] = useSearchParams();
   const id = bidFromLoc(location, sp);
+  const { socket } = useSocket();
   const [booking, setBooking] = useState<Booking | null>(null);
 
-  useEffect(() => {
+  const fetchBooking = useCallback(async () => {
     if (!id) return;
-    const load = async () => {
-      try {
-        const b = await bookingsService.getById(id);
-        setBooking(b);
-      } catch {
-        setBooking(null);
+    try {
+      const b = await bookingsService.getById(id);
+      setBooking(b);
+    } catch {
+      setBooking(null);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void fetchBooking();
+  }, [fetchBooking]);
+
+  useEffect(() => {
+    if (!socket || !id) return;
+
+    const handleBookingUpdate = (updatedBooking: Booking) => {
+      if (updatedBooking._id === id) {
+        setBooking(updatedBooking);
       }
     };
-    void load();
-    const t = setInterval(load, 10000);
-    return () => clearInterval(t);
-  }, [id]);
+
+    socket.on('booking:updated', handleBookingUpdate);
+    return () => {
+      socket.off('booking:updated', handleBookingUpdate);
+    };
+  }, [socket, id]);
 
   if (!id) return <Text>Missing booking id.</Text>;
   if (!booking) return <Skeleton height={160} />;
@@ -178,7 +203,8 @@ export function ProofOfDeliveryPage() {
 
 export function ChatInboxPage() {
   const navigate = useNavigate();
-  const [items, setItems] = useState<Awaited<ReturnType<typeof chatService.getInbox>>>([]);
+  const { socket } = useSocket();
+  const [items, setItems] = useState<ConversationSummary[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -190,9 +216,36 @@ export function ChatInboxPage() {
       }
     };
     void load();
-    const i = setInterval(load, 5000);
-    return () => clearInterval(i);
   }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNewMessage = (message: Message) => {
+      const bookingId = messageBookingId(message);
+      setItems((prev) => {
+        const existing = prev.find((c) => c.bookingId === bookingId);
+        if (existing) {
+          return prev.map((c) =>
+            c.bookingId === bookingId
+              ? {
+                  ...c,
+                  lastMessage: message,
+                  unreadCount: c.unreadCount + 1,
+                }
+              : c,
+          );
+        }
+        void chatService.getInbox().then(setItems);
+        return prev;
+      });
+    };
+
+    socket.on('chat:message', handleNewMessage);
+    return () => {
+      socket.off('chat:message', handleNewMessage);
+    };
+  }, [socket]);
 
   return (
     <Stack>
@@ -223,49 +276,123 @@ export function ChatInboxPage() {
 export function ChatThreadPage() {
   const location = useLocation();
   const [sp] = useSearchParams();
+  const { user } = useAuth();
+  const { socket } = useSocket();
   const id =
     (location.state as { bookingId?: string } | null)?.bookingId ?? sp.get('bookingId');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [content, setContent] = useState('');
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+
+  const currentUserId = user?.id ?? '';
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   useEffect(() => {
     if (!id) return;
     const load = async () => {
       try {
         const res = await chatService.getMessages(id, { limit: 100 });
-        const next = res?.data ?? [];
-        setMessages((prev) => {
-          const map = new Map<string, Message>();
-          prev.forEach((m) => map.set(m._id, m));
-          next.forEach((m) => map.set(m._id, m));
-          return Array.from(map.values()).sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-          );
-        });
+        setMessages(res?.data ?? []);
       } catch {
         /* ignore */
       }
     };
     void load();
-    const i = setInterval(load, 5000);
-    return () => clearInterval(i);
   }, [id]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+    if (!socket || !id) return;
+    socket.emit('chat:join', { bookingId: id });
+    return () => {
+      socket.emit('chat:leave', { bookingId: id });
+    };
+  }, [socket, id]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMessage = (message: Message) => {
+      if (messageBookingId(message) !== id) return;
+      setMessages((prev) => {
+        const exists = prev.some((m) => m._id === message._id);
+        return exists ? prev : [...prev, message];
+      });
+      scrollToBottom();
+    };
+
+    socket.on('chat:message', handleMessage);
+    return () => {
+      socket.off('chat:message', handleMessage);
+    };
+  }, [socket, id, scrollToBottom]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTyping = ({ userId }: { userId: string }) => {
+      if (userId !== currentUserId) {
+        setIsOtherTyping(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => setIsOtherTyping(false), 3000);
+      }
+    };
+
+    const handleStopTyping = ({ userId }: { userId: string }) => {
+      if (userId !== currentUserId) setIsOtherTyping(false);
+    };
+
+    socket.on('chat:typing', handleTyping);
+    socket.on('chat:stop_typing', handleStopTyping);
+    return () => {
+      socket.off('chat:typing', handleTyping);
+      socket.off('chat:stop_typing', handleStopTyping);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [socket, currentUserId]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages.length, scrollToBottom]);
+
+  const handleInputChange = (value: string) => {
+    setContent(value);
+    if (!socket || !id) return;
+    socket.emit('chat:typing', { bookingId: id });
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit('chat:stop_typing', { bookingId: id });
+    }, 2000);
+  };
 
   const send = async () => {
     if (!id || !content.trim()) return;
+    const text = content.trim();
+    setContent('');
+
+    const optimistic: Message = {
+      _id: `temp-${Date.now()}`,
+      bookingId: id,
+      content: text,
+      senderId: { id: currentUserId, fullName: 'You' } as Message['senderId'],
+      receiverId: '',
+      imageUrl: null,
+      isRead: false,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    scrollToBottom();
+
     try {
-      await chatService.sendMessage(id, content.trim());
-      setContent('');
-      const res = await chatService.getMessages(id, { limit: 100 });
-      setMessages(res?.data ?? []);
+      await chatService.sendMessage(id, text);
     } catch (e) {
-      notify.error(e instanceof Error ? e.message : 'Send failed');
+      setMessages((prev) => prev.filter((m) => m._id !== optimistic._id));
+      notify.error(e instanceof Error ? e.message : 'Failed to send message');
     }
   };
 
@@ -277,8 +404,6 @@ export function ChatThreadPage() {
       const up = await api.upload<{ url: string }>(`/upload/chat/${id}`, fd);
       if (!up?.url) throw new Error('Upload failed');
       await chatService.sendMessage(id, '📷', up.url);
-      const res = await chatService.getMessages(id, { limit: 100 });
-      setMessages(res?.data ?? []);
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'Upload failed');
     }
@@ -289,6 +414,11 @@ export function ChatThreadPage() {
   return (
     <Stack h="70vh">
       <Title order={3}>Booking chat</Title>
+      {isOtherTyping ? (
+        <Text size="xs" c="dimmed" fs="italic">
+          typing...
+        </Text>
+      ) : null}
       <ScrollArea flex={1}>
         <Stack gap="xs">
           {messages.map((m) => {
@@ -319,7 +449,7 @@ export function ChatThreadPage() {
         <Textarea
           style={{ flex: 1 }}
           value={content}
-          onChange={(e) => setContent(e.currentTarget.value)}
+          onChange={(e) => handleInputChange(e.currentTarget.value)}
           placeholder="Message"
         />
         <Button onClick={() => void send()}>
@@ -343,22 +473,40 @@ export function NotificationPrefsPage() {
 }
 
 export function NotificationsCenterPage() {
+  const { socket } = useSocket();
   const [items, setItems] = useState<(Notification & { createdAt: string })[]>([]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await notificationsService.getAll({ limit: 50 });
       setItems((res?.data ?? []) as (Notification & { createdAt: string })[]);
     } catch {
       setItems([]);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void load();
-    const i = setInterval(load, 30000);
-    return () => clearInterval(i);
-  }, []);
+  }, [load]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNew = (notification: Notification & { createdAt?: string }) => {
+      setItems((prev) => [
+        {
+          ...notification,
+          createdAt: notification.createdAt ?? new Date().toISOString(),
+        } as Notification & { createdAt: string },
+        ...prev,
+      ]);
+    };
+
+    socket.on('notification:new', handleNew);
+    return () => {
+      socket.off('notification:new', handleNew);
+    };
+  }, [socket]);
 
   const markRead = async (nid: string) => {
     try {

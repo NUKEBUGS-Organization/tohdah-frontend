@@ -6,7 +6,6 @@ import {
   Divider,
   Flex,
   Group,
-  Image,
   PasswordInput,
   Select,
   SimpleGrid,
@@ -15,24 +14,58 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconBrandFacebook } from '@tabler/icons-react';
+import {
+  IconBrandApple,
+  IconHeadset,
+  IconHeart,
+  IconLock,
+  IconMail,
+  IconPackage,
+  IconPhone,
+  IconPlaneTilt,
+  IconShieldCheck,
+  IconUser,
+  IconWorld,
+} from '@tabler/icons-react';
 import { useForm } from '@mantine/form';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiRequestError } from '../api/client';
 import type { AuthResponse, RegisterResponse } from '../api/types';
 import { useAuth } from '../context/AuthContext';
-import { signupAssets } from '../figma/signupAssets';
+import { BrandWordmark } from '../components/BrandWordmark';
 import { colors } from '../theme';
 
-function TrustItem({ icon, label }: { icon: string; label: string }) {
+function TrustItem({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <Group gap={6} wrap="nowrap">
-      <Image src={icon} alt="" w={20} h={20} fit="contain" />
+      {icon}
       <Text fz={16} c="rgba(255,255,255,0.6)" lh={1.5}>
         {label}
       </Text>
     </Group>
+  );
+}
+
+function FeatureHighlight({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Stack gap={8} align="center" maw={320}>
+      {icon}
+      <Text ta="center" c="white" fz={18} fw={700}>
+        {title}
+      </Text>
+      <Text ta="center" c="rgba(255,255,255,0.55)" fz={14} lh={1.55}>
+        {description}
+      </Text>
+    </Stack>
   );
 }
 
@@ -99,7 +132,13 @@ export function SignUpPage() {
       if (e instanceof ApiRequestError && e.statusCode === 409) {
         setError('An account with this email already exists.');
       } else {
-        setError(e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : 'Something went wrong');
+        setError(
+          e instanceof ApiRequestError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : 'Something went wrong',
+        );
       }
     } finally {
       setSubmitting(false);
@@ -111,7 +150,6 @@ export function SignUpPage() {
       backgroundColor: colors.inputBg,
       borderColor: colors.border,
       minHeight: 57,
-      paddingLeft: 40,
     },
   } as const;
 
@@ -122,13 +160,22 @@ export function SignUpPage() {
         flex={{ md: 1 }}
         py={{ base: 48, md: 0 }}
         px={48}
-        mih={{ base: 420, md: '100vh' }}
+        mih={{ base: 520, md: '100vh' }}
         style={{
-          backgroundColor: colors.navyBg,
+          backgroundColor: '#1E2A4A',
           overflow: 'hidden',
         }}
       >
-        <Box pos="absolute" inset={0} opacity={0.2} style={{ pointerEvents: 'none' }}>
+        <Box
+          pos="absolute"
+          inset={0}
+          style={{
+            pointerEvents: 'none',
+            background:
+              'linear-gradient(135deg, rgba(0,201,167,0.15) 0%, rgba(75,145,255,0.2) 100%)',
+          }}
+        />
+        <Box pos="absolute" inset={0} opacity={0.25} style={{ pointerEvents: 'none' }}>
           <Box
             pos="absolute"
             top={40}
@@ -137,7 +184,7 @@ export function SignUpPage() {
             h={256}
             style={{
               borderRadius: 9999,
-              background: '#006b58',
+              background: '#00C9A7',
               filter: 'blur(60px)',
             }}
           />
@@ -159,35 +206,34 @@ export function SignUpPage() {
           direction="column"
           align="center"
           justify="center"
-          mih={{ base: 360, md: '100%' }}
+          mih={{ base: 480, md: '100%' }}
           pos="relative"
-          gap={16}
+          gap="xl"
           maw={512}
           mx="auto"
+          pb={{ base: 120, md: 80 }}
         >
-          <Box
-            maw="100%"
-            style={{
-              aspectRatio: '1 / 1',
-              boxShadow: '0 25px 25px rgba(0,0,0,0.15)',
-              borderRadius: 8,
-              overflow: 'hidden',
-            }}
-          >
-            <Image
-              src={signupAssets.travelIllustration}
-              alt=""
-              w="100%"
-              h="100%"
-              fit="cover"
+          <Title order={2} ta="center" c="white" fz={{ base: 24, sm: 28 }} fw={700}>
+            Join our global community
+          </Title>
+
+          <Stack gap="xl" align="center">
+            <FeatureHighlight
+              icon={<IconPlaneTilt size={32} color="#00C9A7" />}
+              title="Earn While You Travel"
+              description="Carry items along your route and get paid."
             />
-          </Box>
-          <Text ta="center" c="white" fz={{ base: 17, sm: 18 }} fw={600} lh={1.45}>
-            Join our global community.
-          </Text>
-          <Text ta="center" c={colors.slate} fz={15} lh={1.55} opacity={0.95} maw={420}>
-            Connect with travelers and senders worldwide.
-          </Text>
+            <FeatureHighlight
+              icon={<IconPackage size={32} color="#00C9A7" />}
+              title="Send with Confidence"
+              description="Find trusted travelers going your way."
+            />
+            <FeatureHighlight
+              icon={<IconHeart size={32} color="#00C9A7" />}
+              title="Support Your Community"
+              description="Help elderly and vulnerable people get what they need."
+            />
+          </Stack>
         </Flex>
 
         <Group
@@ -199,9 +245,12 @@ export function SignUpPage() {
           visibleFrom="md"
           wrap="nowrap"
         >
-          <TrustItem icon={signupAssets.trust1} label="Secure & Verified" />
-          <TrustItem icon={signupAssets.trust2} label="180+ Countries" />
-          <TrustItem icon={signupAssets.trust3} label="24/7 Support" />
+          <TrustItem
+            icon={<IconShieldCheck size={16} color="teal" />}
+            label="Secure & Verified"
+          />
+          <TrustItem icon={<IconWorld size={16} color="teal" />} label="180+ Countries" />
+          <TrustItem icon={<IconHeadset size={16} color="teal" />} label="24/7 Support" />
         </Group>
       </Box>
 
@@ -214,13 +263,7 @@ export function SignUpPage() {
       >
         <Box component="form" onSubmit={handleSubmit} maw={448} w="100%">
           <Stack gap={32}>
-            <Image
-              src={signupAssets.logo}
-              alt="Tohdah"
-              w={32}
-              h={32}
-              fit="contain"
-            />
+            <BrandWordmark fz={28} />
 
             <Stack gap={4}>
               <Title order={2} fz={16} fw={600} c={colors.navyDeep}>
@@ -240,15 +283,7 @@ export function SignUpPage() {
               <TextInput
                 label="Full Name"
                 placeholder="John Doe"
-                leftSection={
-                  <Image
-                    src={signupAssets.iconUser}
-                    alt=""
-                    w={16}
-                    h={16}
-                    fit="contain"
-                  />
-                }
+                leftSection={<IconUser size={16} stroke={1.5} />}
                 leftSectionPointerEvents="none"
                 styles={inputStyles}
                 {...form.getInputProps('fullName')}
@@ -257,15 +292,7 @@ export function SignUpPage() {
                 label="Email Address"
                 placeholder="name@example.com"
                 type="email"
-                leftSection={
-                  <Image
-                    src={signupAssets.iconMail}
-                    alt=""
-                    w={20}
-                    h={16}
-                    fit="contain"
-                  />
-                }
+                leftSection={<IconMail size={16} stroke={1.5} />}
                 leftSectionPointerEvents="none"
                 styles={inputStyles}
                 {...form.getInputProps('email')}
@@ -284,15 +311,7 @@ export function SignUpPage() {
                   <TextInput
                     placeholder="(555) 000-0000"
                     style={{ flex: 1 }}
-                    leftSection={
-                      <Image
-                        src={signupAssets.iconPhone}
-                        alt=""
-                        w={18}
-                        h={18}
-                        fit="contain"
-                      />
-                    }
+                    leftSection={<IconPhone size={16} stroke={1.5} />}
                     leftSectionPointerEvents="none"
                     styles={inputStyles}
                     {...form.getInputProps('phoneLine')}
@@ -302,24 +321,7 @@ export function SignUpPage() {
               <PasswordInput
                 label="Password"
                 placeholder="••••••••"
-                visibilityToggleIcon={({ reveal }) => (
-                  <Image
-                    src={signupAssets.iconEye}
-                    alt={reveal ? 'Hide password' : 'Show password'}
-                    w={22}
-                    h={15}
-                    fit="contain"
-                  />
-                )}
-                leftSection={
-                  <Image
-                    src={signupAssets.iconLock}
-                    alt=""
-                    w={16}
-                    h={21}
-                    fit="contain"
-                  />
-                }
+                leftSection={<IconLock size={16} stroke={1.5} />}
                 leftSectionPointerEvents="none"
                 styles={inputStyles}
                 {...form.getInputProps('password')}
@@ -331,15 +333,6 @@ export function SignUpPage() {
                 radius="md"
                 fullWidth
                 loading={submitting}
-                rightSection={
-                  <Image
-                    src={signupAssets.ctaArrow}
-                    alt=""
-                    w={14}
-                    h={14}
-                    fit="contain"
-                  />
-                }
                 styles={{
                   root: {
                     background: `linear-gradient(135deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
@@ -370,7 +363,7 @@ export function SignUpPage() {
               </Box>
             </Box>
 
-            <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
               <Button
                 variant="default"
                 fullWidth
@@ -382,12 +375,11 @@ export function SignUpPage() {
                   },
                 }}
                 leftSection={
-                  <Image
-                    src={signupAssets.google}
+                  <img
+                    src="https://www.google.com/favicon.ico"
+                    width={16}
+                    height={16}
                     alt=""
-                    w={20}
-                    h={20}
-                    fit="contain"
                   />
                 }
                 onClick={handleGoogleSignup}
@@ -404,37 +396,12 @@ export function SignUpPage() {
                     borderColor: colors.border,
                   },
                 }}
-                leftSection={
-                  <Image
-                    src={signupAssets.appleMark}
-                    alt=""
-                    w={16}
-                    h={16}
-                    fit="contain"
-                  />
-                }
+                leftSection={<IconBrandApple size={16} />}
                 onClick={() =>
                   setError('Apple sign-in is not wired yet — use email registration.')
                 }
               >
                 Apple
-              </Button>
-              <Button
-                variant="default"
-                fullWidth
-                radius="md"
-                h={58}
-                styles={{
-                  root: {
-                    borderColor: colors.border,
-                  },
-                }}
-                leftSection={<IconBrandFacebook size={22} />}
-                onClick={() =>
-                  setError('Facebook sign-in is not wired yet — use email registration.')
-                }
-              >
-                Facebook
               </Button>
             </SimpleGrid>
 

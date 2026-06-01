@@ -58,12 +58,12 @@ export function AdminPaymentsPage() {
           Payment management
         </Title>
         <Text fz={14} c="dimmed" mt={4}>
-          Commission and booking financials (stub payments until Stripe is integrated).
+          Commission and booking financials. Payments processed via Stripe.
         </Text>
       </div>
 
       <Alert color="blue" title="Payment processing">
-        Payment processing is in stub mode. Stripe integration pending.
+        Payments processed via Stripe. Webhook events update booking status when charges succeed.
       </Alert>
 
       <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }} spacing="md">

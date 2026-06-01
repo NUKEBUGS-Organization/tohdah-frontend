@@ -11,6 +11,8 @@ import {
   ScrollArea,
   Text,
   TextInput,
+  ThemeIcon,
+  Tooltip,
   UnstyledButton,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
@@ -24,12 +26,14 @@ import {
   IconSettings,
   IconUser,
   IconWallet,
+  IconWifi,
 } from '@tabler/icons-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Outlet, Link as RouterLink, useLocation } from 'react-router-dom';
 import { notificationsService } from '../api/services/notifications.service';
 import { APP_SCREEN_CATALOG, groupCatalogBySection } from '../app/catalog';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { colors } from '../theme';
 
 const grouped = groupCatalogBySection(APP_SCREEN_CATALOG);
@@ -57,21 +61,34 @@ export function AppLayout() {
   const [opened, { toggle }] = useDisclosure();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { socket, isConnected } = useSocket();
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    const fetchCount = async () => {
-      try {
-        const data = await notificationsService.getAll({ isRead: false, limit: 1 });
-        if (data) setUnreadCount(data.unreadCount ?? 0);
-      } catch {
-        setUnreadCount(0);
-      }
-    };
-    void fetchCount();
-    const interval = setInterval(fetchCount, 30000);
-    return () => clearInterval(interval);
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const data = await notificationsService.getAll({ isRead: false, limit: 1 });
+      if (data) setUnreadCount(data.unreadCount ?? 0);
+    } catch {
+      setUnreadCount(0);
+    }
   }, []);
+
+  useEffect(() => {
+    void fetchUnreadCount();
+  }, [fetchUnreadCount]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNewNotification = () => {
+      setUnreadCount((prev) => prev + 1);
+    };
+
+    socket.on('notification:new', handleNewNotification);
+    return () => {
+      socket.off('notification:new', handleNewNotification);
+    };
+  }, [socket]);
 
   const initials =
     user?.fullName
@@ -245,6 +262,13 @@ export function AppLayout() {
             style={{ flex: 1 }}
           />
           <Group gap="sm" wrap="nowrap">
+            {!isConnected ? (
+              <Tooltip label="Reconnecting...">
+                <ThemeIcon color="gray" size="xs" radius="xl" variant="light">
+                  <IconWifi size={10} />
+                </ThemeIcon>
+              </Tooltip>
+            ) : null}
             <Anchor
               component="button"
               type="button"
