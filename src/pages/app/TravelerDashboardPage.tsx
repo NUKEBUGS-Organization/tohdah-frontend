@@ -3,7 +3,6 @@ import {
   Badge,
   Box,
   Button,
-  Card,
   Divider,
   Group,
   Paper,
@@ -11,17 +10,19 @@ import {
   Skeleton,
   Stack,
   Text,
-  Title,
+  ThemeIcon,
 } from '@mantine/core';
 import {
+  IconInbox,
   IconMapPin,
   IconPlane,
   IconPlus,
   IconStar,
+  IconTruck,
   IconUserShare,
 } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ACTIVE_DELIVERY_STATUSES,
@@ -34,24 +35,10 @@ import { notify } from '../../utils/notify';
 import { paginatedRows, paginatedTotal } from '../../api/booking-utils';
 import { resolveUserId } from '../../utils/screen-data';
 import { colors } from '../../theme';
+import { PageHeader } from '../../components/PageHeader';
 import type { Booking, Trip } from '../../api/types';
 
-const TEAL = '#20B2AA';
-const NAVY_REFERRAL = '#0A192F';
-
-function gradientButtonProps() {
-  return {
-    styles: {
-      root: {
-        background: `linear-gradient(134deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
-        border: 'none',
-        color: 'white',
-      },
-    },
-  } as const;
-}
-
-function SmallStat({
+function GlassStat({
   label,
   value,
   rating,
@@ -61,17 +48,30 @@ function SmallStat({
   rating?: boolean;
 }) {
   return (
-    <Paper radius="md" p="md" withBorder h="100%">
-      <Text fz={11} tt="uppercase" fw={700} c={colors.subtleText}>
+    <Paper className="glass-card" p="lg" radius="xl" h="100%">
+      <Text size="xs" c={colors.subtleText} fw={600} tt="uppercase" lts="0.08em">
         {label}
       </Text>
-      <Group align="center" gap={6} mt={6}>
-        <Text fz={22} fw={800} c={colors.navyDeep}>
+      <Group align="center" gap={6} mt={4}>
+        <Text fw={700} size="2rem" c={colors.textPrimary}>
           {value}
         </Text>
-        {rating ? <IconStar size={18} color={TEAL} fill={TEAL} style={{ opacity: 0.9 }} /> : null}
+        {rating ? <IconStar size={18} color={colors.primaryTeal} fill={colors.primaryTeal} /> : null}
       </Group>
     </Paper>
+  );
+}
+
+function EmptySection({ icon, message }: { icon: ReactNode; message: string }) {
+  return (
+    <Stack align="center" py="xl" gap="sm">
+      <ThemeIcon size={48} radius="xl" variant="light" color="teal">
+        {icon}
+      </ThemeIcon>
+      <Text c={colors.subtleText} size="sm" ta="center">
+        {message}
+      </Text>
+    </Stack>
   );
 }
 
@@ -124,7 +124,7 @@ function IncomingBookingRow({
             </Text>
           </div>
         </Group>
-        <Text fw={700} fz={14} c={TEAL}>
+        <Text fw={700} fz={14} c={colors.primaryTeal}>
           {new Intl.NumberFormat(undefined, {
             style: 'currency',
             currency: booking.currency || 'USD',
@@ -242,158 +242,169 @@ export function TravelerDashboardPage() {
   return (
     <Stack gap="lg" pb={48}>
       <Group justify="space-between" align="flex-end" wrap="wrap">
-        <Box>
-          <Title order={2} c={colors.navyDeep}>
-            Dashboard
-          </Title>
-          <Text c={colors.mutedText} mt={4}>
-            Active trips, wallet, and requests at a glance.
-          </Text>
-        </Box>
+        <PageHeader
+          section="Traveler"
+          title="Dashboard"
+          subtitle="Active trips, wallet, and requests at a glance."
+        />
         <Button
           component={Link}
           to="/app/traveler/trips/new"
           leftSection={<IconPlus size={18} />}
-          {...gradientButtonProps()}
+          radius="xl"
         >
           Post a trip
         </Button>
       </Group>
 
-      <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="md">
-        <Box style={{ gridColumn: 'auto' }} maw={{ lg: '100%' }}>
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+        <Paper
+          p="xl"
+          radius="xl"
+          style={{
+            background: 'linear-gradient(135deg, #00C9A7, #2D86FF)',
+            border: 'none',
+            boxShadow: '0 8px 32px rgba(0,201,167,0.3)',
+            gridColumn: 'span 1',
+          }}
+        >
+          <Text size="xs" c="rgba(255,255,255,0.8)" fw={600} tt="uppercase" lts="0.1em">
+            Wallet (earnings)
+          </Text>
+          <Text fw={800} size="2.5rem" c="white" mt={4}>
+            {loadBookings
+              ? '—'
+              : new Intl.NumberFormat(undefined, {
+                  style: 'currency',
+                  currency: 'USD',
+                }).format(totalEarnings)}
+          </Text>
+          <Button
+            fullWidth
+            mt="md"
+            radius="xl"
+            variant="white"
+            color="dark"
+            component={Link}
+            to="/app/wallet/history"
+          >
+            Transaction history
+          </Button>
+        </Paper>
+        <GlassStat label="Active trips" value={String(activeTripCount)} />
+        <GlassStat label="Pending offers" value={String(pendingCount)} />
+        <GlassStat label="Rating" value={ratingDisplay} rating />
+      </SimpleGrid>
+
+      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
+        <Box>
           {(!authReady || loadTrips) ? (
-            <Skeleton height={180} radius="md" />
+            <Skeleton height={180} radius="xl" />
           ) : tripsPreview.length === 0 ? (
-            <Card withBorder radius="md" p="lg" h="100%">
-              <Text fz={11} tt="uppercase" fw={700} c={colors.subtleText}>
+            <Paper className="glass-card" p="xl" radius="xl">
+              <Text fw={700} size="lg" c={colors.textPrimary} mb="md">
                 Active trips
               </Text>
-              <Text mt="md" c={colors.mutedText}>
-                You have no active trips. Post a route to start receiving requests.
-              </Text>
-              <Button component={Link} to="/app/traveler/trips/new" mt="md" {...gradientButtonProps()}>
+              <EmptySection
+                icon={<IconPlane size={24} />}
+                message="You have no active trips. Post a route to start receiving requests."
+              />
+              <Button component={Link} to="/app/traveler/trips/new" radius="xl" fullWidth>
                 Post a trip
               </Button>
-            </Card>
+            </Paper>
           ) : (
             <Stack gap="md">
               {tripsPreview.map((t) => (
-                <Card key={t._id} withBorder radius="md" p="lg" h="100%">
+                <Paper key={t._id} className="glass-card" p="xl" radius="xl">
                   <Group justify="space-between" align="flex-start" mb="md">
                     <div>
-                      <Text fz={11} tt="uppercase" fw={700} c={colors.subtleText} mb={4}>
+                      <Text size="xs" c={colors.subtleText} fw={600} tt="uppercase" lts="0.08em" mb={4}>
                         Active trip
                       </Text>
                       <Group gap="sm" align="center" wrap="nowrap">
-                        <Avatar radius="sm" size={40} color="brandTeal" variant="light">
+                        <Avatar radius="sm" size={40} color="teal" variant="light">
                           <IconPlane size={22} />
                         </Avatar>
                         <div>
-                          <Title order={4} fz={20} c={colors.navyDeep}>
+                          <Text fw={700} size="lg" c={colors.textPrimary}>
                             {t.origin} → {t.destination}
-                          </Title>
-                          <Text fz={13} c={colors.mutedText}>
+                          </Text>
+                          <Text size="sm" c={colors.textSecondary}>
                             Departs {new Date(t.departureDate).toLocaleDateString()}
                           </Text>
                         </div>
                       </Group>
                     </div>
-                    <Badge variant="light" color="teal" size="lg" radius="sm">
+                    <Badge variant="light" color="teal" radius="xl">
                       {t.luggageSpace}
                     </Badge>
                   </Group>
-                  <Group gap="xs" c={colors.mutedText} fz={13} mb="md">
+                  <Group gap="xs" c={colors.textSecondary} fz={13} mb="md">
                     <IconMapPin size={14} />
-                    <Text>{t.matchedRequestsCount} matched request(s)</Text>
+                    <Text size="sm">{t.matchedRequestsCount} matched request(s)</Text>
                   </Group>
                   <Button
                     variant="light"
                     color="teal"
                     fullWidth
+                    radius="xl"
                     onClick={() =>
                       navigate('/app/traveler/trips/detail', { state: { tripId: t._id } })
                     }
                   >
                     View details
                   </Button>
-                </Card>
+                </Paper>
               ))}
             </Stack>
           )}
         </Box>
-        <Stack gap="md">
-          <Card withBorder radius="md" p="lg">
-            <Text fz={11} tt="uppercase" fw={700} c={colors.subtleText}>
-              Wallet (earnings)
+
+        <Paper className="glass-card" p="xl" radius="xl">
+          <Text fw={700} size="lg" c={colors.textPrimary} mb="md">
+            Incoming requests
+          </Text>
+          {loadBookings ? (
+            <Skeleton height={80} />
+          ) : bookingsError ? (
+            <Text c={colors.textSecondary} size="sm">
+              Unable to load requests right now. Please refresh.
             </Text>
-            <Text fz={32} fw={800} c={colors.navyDeep} mt={4}>
-              {loadBookings
-                ? '—'
-                : new Intl.NumberFormat(undefined, {
-                    style: 'currency',
-                    currency: 'USD',
-                  }).format(totalEarnings)}
-            </Text>
-            <Text fz={13} c={colors.mutedText} mt={4}>
-              Sum of completed booking payouts (USD).
-            </Text>
-            <Button
-              fullWidth
-              mt="md"
-              variant="outline"
-              color="brandTeal"
-              component={Link}
-              to="/app/wallet/history"
-            >
-              Transaction history
-            </Button>
-          </Card>
-          <Group grow>
-            <SmallStat label="Active trips" value={String(activeTripCount)} />
-            <SmallStat label="Pending offers" value={String(pendingCount)} />
-          </Group>
-          <SmallStat label="Rating" value={ratingDisplay} rating />
-        </Stack>
+          ) : incoming.length === 0 ? (
+            <EmptySection
+              icon={<IconInbox size={24} />}
+              message="No pending booking requests right now"
+            />
+          ) : (
+            <Stack gap={0}>
+              {incoming.map((b, i) => (
+                <Box key={b._id}>
+                  {i > 0 ? <Divider my="md" /> : null}
+                  <IncomingBookingRow
+                    booking={b}
+                    busy={actionId === b._id}
+                    onAccept={(id) => void handleAccept(id)}
+                    onDecline={(id) => void handleDecline(id)}
+                  />
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Paper>
       </SimpleGrid>
 
-      <Card withBorder radius="md" p="lg">
-        <Text fw={700} fz={16} c={colors.navyDeep} mb="md">
-          Incoming requests
-        </Text>
-        {loadBookings ? (
-          <Skeleton height={80} />
-        ) : bookingsError ? (
-          <Text c="dimmed" size="sm">
-            Unable to load requests right now. Please refresh.
-          </Text>
-        ) : incoming.length === 0 ? (
-          <Text c={colors.mutedText}>No pending booking requests right now.</Text>
-        ) : (
-          <Stack gap={0}>
-            {incoming.map((b, i) => (
-              <Box key={b._id}>
-                {i > 0 ? <Divider my="md" /> : null}
-                <IncomingBookingRow
-                  booking={b}
-                  busy={actionId === b._id}
-                  onAccept={(id) => void handleAccept(id)}
-                  onDecline={(id) => void handleDecline(id)}
-                />
-              </Box>
-            ))}
-          </Stack>
-        )}
-      </Card>
-
-      <Card withBorder radius="md" p="lg">
-        <Text fw={700} fz={16} c={colors.navyDeep} mb="md">
+      <Paper className="glass-card" p="xl" radius="xl">
+        <Text fw={700} size="lg" c={colors.textPrimary} mb="md">
           Active deliveries
         </Text>
         {loadBookings ? (
           <Skeleton height={60} />
         ) : activeDeliveries.length === 0 ? (
-          <Text c={colors.mutedText}>No active deliveries yet.</Text>
+          <EmptySection
+            icon={<IconTruck size={24} />}
+            message="No active deliveries yet"
+          />
         ) : (
           <Stack gap="sm">
             {activeDeliveries.map((b) => {
@@ -402,61 +413,70 @@ export function TravelerDashboardPage() {
               return (
                 <Group key={b._id} justify="space-between" wrap="nowrap">
                   <div>
-                    <Text fw={600} fz={14}>
+                    <Text fw={600} size="sm" c={colors.textPrimary}>
                       {label}
                     </Text>
-                    <Text fz={12} c={colors.mutedText}>
+                    <Text size="xs" c={colors.textSecondary}>
                       {b.bookingRef} · {b.status.replace(/_/g, ' ')}
                     </Text>
                   </div>
                   <Button
                     size="xs"
+                    radius="xl"
                     variant="light"
+                    color="teal"
                     component={Link}
-                    to="/app/bookings"
+                    to={`/app/tracking/live?bookingId=${encodeURIComponent(b._id)}`}
                   >
-                    View
+                    Track
                   </Button>
                 </Group>
               );
             })}
           </Stack>
         )}
-      </Card>
+      </Paper>
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-        <Card withBorder radius="md" p="lg" h={260}>
-          <Text fw={700} fz={14} c={colors.navyDeep} mb="sm">
+        <Paper className="glass-card" p="xl" radius="xl" h={260}>
+          <Text fw={700} c={colors.textPrimary} mb="sm">
             Your routes
           </Text>
-          <Text fz={14} c={colors.mutedText}>
+          <Text size="sm" c={colors.textSecondary}>
             {activeTripCount > 0
               ? 'Open My Trips to manage published routes and matches.'
               : 'Post a trip to see your corridor on the map.'}
           </Text>
-        </Card>
-        <Card withBorder radius="md" p="lg" h={260}>
-          <Text fw={700} fz={14} c={colors.navyDeep} mb="sm">
+        </Paper>
+        <Paper className="glass-card" p="xl" radius="xl" h={260}>
+          <Text fw={700} c={colors.textPrimary} mb="sm">
             Activity
           </Text>
-          <Text fz={14} c={colors.mutedText}>
+          <Text size="sm" c={colors.textSecondary}>
             Completed deliveries:{' '}
             {allTravelerBookings.filter((b) => b.status === 'completed').length}. Browse open sender
-            requests from
-            the marketplace anytime.
+            requests from the marketplace anytime.
           </Text>
-          <Button component={Link} to="/app/traveler/browse/requests" variant="light" mt="md" color="teal">
+          <Button
+            component={Link}
+            to="/app/traveler/browse/requests"
+            variant="light"
+            mt="md"
+            color="teal"
+            radius="xl"
+          >
             Browse requests
           </Button>
-        </Card>
+        </Paper>
       </SimpleGrid>
 
       <Paper
-        radius="md"
+        radius="xl"
         p="xl"
         style={{
-          background: NAVY_REFERRAL,
+          background: `linear-gradient(135deg, ${colors.navyDark}, #0D2137)`,
           color: 'white',
+          border: 'none',
         }}
       >
         <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
@@ -488,6 +508,7 @@ export function TravelerDashboardPage() {
             leftSection={<IconUserShare size={18} />}
             variant="white"
             color="dark"
+            radius="xl"
             component={Link}
             to="/signup"
           >

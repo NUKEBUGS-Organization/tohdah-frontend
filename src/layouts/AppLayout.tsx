@@ -37,6 +37,33 @@ import { useSocket } from '../context/SocketContext';
 import { resolveUserId } from '../utils/screen-data';
 import { colors } from '../theme';
 
+const sidebarSectionLabel = {
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: '0.1em',
+  color: colors.subtleText,
+  textTransform: 'uppercase' as const,
+  paddingLeft: 16,
+  marginBottom: 4,
+  marginTop: 20,
+};
+
+const shellHeaderStyle = {
+  background: 'rgba(255,255,255,0.9)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  borderBottom: '1px solid rgba(0,0,0,0.06)',
+  boxShadow: '0 1px 12px rgba(0,0,0,0.05)',
+};
+
+const shellNavbarStyle = {
+  background: 'rgba(255,255,255,0.85)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  borderRight: '1px solid rgba(0,0,0,0.06)',
+  boxShadow: '2px 0 20px rgba(0,0,0,0.04)',
+};
+
 export function AppLayout() {
   const [opened, { toggle }] = useDisclosure();
   const location = useLocation();
@@ -74,18 +101,26 @@ export function AppLayout() {
       .slice(0, 2)
       .toUpperCase() ?? '?';
 
+  const navActiveStyle = (active: boolean) =>
+    active
+      ? {
+          background: 'linear-gradient(135deg, rgba(0,201,167,0.10), rgba(45,134,255,0.06))',
+          color: colors.primaryTeal,
+          fontWeight: 600,
+          borderRadius: 12,
+        }
+      : { borderRadius: 12 };
+
   const travelerLinks = (
     <>
-      <Text size="xs" fw={700} c={colors.subtleText} tt="uppercase" mb={4}>
-        Traveler
-      </Text>
+      <Text style={{ ...sidebarSectionLabel, marginTop: 8 }}>Traveler</Text>
       <NavLink
         component={RouterLink}
         to="/app/traveler"
         label="Dashboard"
         leftSection={<IconLayoutDashboard size={18} stroke={1.5} />}
         active={location.pathname === '/app/traveler'}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname === '/app/traveler')}
       />
       <NavLink
         component={RouterLink}
@@ -93,7 +128,7 @@ export function AppLayout() {
         label="My Trips"
         leftSection={<IconPlaneDeparture size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/traveler/trips')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/traveler/trips'))}
       />
       <NavLink
         component={RouterLink}
@@ -101,7 +136,7 @@ export function AppLayout() {
         label="My Bookings"
         leftSection={<IconCalendar size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/bookings')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/bookings'))}
       />
       <NavLink
         component={RouterLink}
@@ -109,7 +144,7 @@ export function AppLayout() {
         label="Messages"
         leftSection={<IconMessage size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/chat')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/chat'))}
       />
       <NavLink
         component={RouterLink}
@@ -117,7 +152,7 @@ export function AppLayout() {
         label="Wallet"
         leftSection={<IconWallet size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/wallet')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/wallet'))}
       />
       <NavLink
         component={RouterLink}
@@ -125,23 +160,21 @@ export function AppLayout() {
         label="Settings"
         leftSection={<IconSettings size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/settings')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/settings'))}
       />
     </>
   );
 
   const requesterLinks = (
     <>
-      <Text size="xs" fw={700} c={colors.subtleText} tt="uppercase" mt="lg" mb={4}>
-        Requester
-      </Text>
+      <Text style={sidebarSectionLabel}>Requester</Text>
       <NavLink
         component={RouterLink}
         to="/app/requester"
         label="Dashboard"
         leftSection={<IconLayoutDashboard size={18} stroke={1.5} />}
         active={location.pathname === '/app/requester'}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname === '/app/requester')}
       />
       <NavLink
         component={RouterLink}
@@ -149,7 +182,7 @@ export function AppLayout() {
         label="My Requests"
         leftSection={<IconClipboardList size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/requester/requests')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/requester/requests'))}
       />
       <NavLink
         component={RouterLink}
@@ -157,7 +190,7 @@ export function AppLayout() {
         label="My Bookings"
         leftSection={<IconCalendar size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/bookings')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/bookings'))}
       />
       <NavLink
         component={RouterLink}
@@ -165,7 +198,7 @@ export function AppLayout() {
         label="Messages"
         leftSection={<IconMessage size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/chat')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/chat'))}
       />
       <NavLink
         component={RouterLink}
@@ -173,7 +206,7 @@ export function AppLayout() {
         label="Profile"
         leftSection={<IconUser size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/profile')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/profile'))}
       />
       <NavLink
         component={RouterLink}
@@ -181,7 +214,7 @@ export function AppLayout() {
         label="Settings"
         leftSection={<IconSettings size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/settings')}
-        style={{ borderRadius: 8 }}
+        style={navActiveStyle(location.pathname.startsWith('/app/settings'))}
       />
     </>
   );
@@ -195,6 +228,11 @@ export function AppLayout() {
         collapsed: { mobile: !opened },
       }}
       padding="md"
+      styles={{
+        header: shellHeaderStyle,
+        navbar: shellNavbarStyle,
+        main: { background: 'transparent' },
+      }}
     >
       <AppShell.Header px="md" style={{ display: 'flex', alignItems: 'center' }}>
         <Group justify="space-between" w="100%" wrap="nowrap" gap="md">
@@ -205,7 +243,7 @@ export function AppLayout() {
               to="/"
               fw={800}
               fz={18}
-              c={colors.navyDeep}
+              className="gradient-text"
               style={{ textDecoration: 'none' }}
             >
               Tohdah
@@ -237,7 +275,7 @@ export function AppLayout() {
               type="button"
               fz={14}
               fw={500}
-              c={colors.mutedText}
+              c={colors.textSecondary}
               style={{ background: 'none', border: 'none', cursor: 'pointer' }}
               onClick={() => void logout()}
             >
@@ -245,10 +283,10 @@ export function AppLayout() {
             </Anchor>
             <UnstyledButton component={RouterLink} to="/app/notifications" aria-label="Notifications">
               <Indicator inline disabled={unreadCount <= 0} label={unreadCount > 99 ? '99+' : unreadCount} size={18}>
-                <IconBell size={20} stroke={1.5} style={{ color: colors.mutedText }} />
+                <IconBell size={20} stroke={1.5} style={{ color: colors.textSecondary }} />
               </Indicator>
             </UnstyledButton>
-            <Avatar radius="xl" size="sm" color="brandTeal" src={user?.profilePhoto ?? undefined}>
+            <Avatar radius="xl" size="sm" color="teal" src={user?.profilePhoto ?? undefined}>
               {initials}
             </Avatar>
           </Group>
@@ -257,9 +295,7 @@ export function AppLayout() {
 
       <AppShell.Navbar p="md">
         <ScrollArea h="calc(100vh - 120px)">
-          <Text size="xs" fw={700} c={colors.subtleText} tt="uppercase" mb="sm">
-            Shortcuts
-          </Text>
+          <Text style={{ ...sidebarSectionLabel, marginTop: 8 }}>Shortcuts</Text>
           {travelerLinks}
           {requesterLinks}
         </ScrollArea>

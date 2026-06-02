@@ -1,6 +1,7 @@
 import {
   Alert,
   Badge,
+  Box,
   Button,
   Center,
   Container,
@@ -8,7 +9,6 @@ import {
   Loader,
   NumberInput,
   Paper,
-  Progress,
   SimpleGrid,
   Skeleton,
   Stack,
@@ -24,7 +24,7 @@ import { Elements, CardElement, useElements, useStripe } from '@stripe/react-str
 import { loadStripe } from '@stripe/stripe-js';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IconCheck, IconCreditCard, IconMessage } from '@tabler/icons-react';
+import { IconArrowRight, IconCheck, IconCreditCard, IconMessage } from '@tabler/icons-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   bookingDocId,
@@ -47,7 +47,9 @@ import { FRIENDLY_LOAD_ERROR, resolveUserId } from '../../../utils/screen-data';
 import { useApi } from '../../../hooks/useApi';
 import { usePagination } from '../../../hooks/usePagination';
 import { notify } from '../../../utils/notify';
-import { colors } from '../../../theme';
+import { PageHeader } from '../../../components/PageHeader';
+import { colors, glassTabsStyles } from '../../../theme';
+import { extractDestination, extractOrigin } from '../../../api/id-utils';
 
 function bookingIdFromLoc(location: ReturnType<typeof useLocation>, sp: URLSearchParams): string | null {
   const fromQuery = sp.get('bookingId');
@@ -361,6 +363,34 @@ export function BookingReceiptPage() {
   );
 }
 
+function bookingProgressPct(status: Booking['status']): number {
+  return (
+    {
+      pending_acceptance: 20,
+      countered: 35,
+      confirmed: 45,
+      paid: 55,
+      in_transit: 70,
+      delivered: 85,
+      completed: 100,
+      cancelled: 0,
+      disputed: 50,
+    }[status] ?? 10
+  );
+}
+
+function bookingEndpoints(booking: Booking): { origin: string; destination: string } {
+  const origin =
+    extractOrigin(booking.requestId) ||
+    extractOrigin(booking.tripId) ||
+    'Origin';
+  const destination =
+    extractDestination(booking.requestId) ||
+    extractDestination(booking.tripId) ||
+    'Destination';
+  return { origin, destination };
+}
+
 function BookingListCard({
   booking,
   onOpen,
@@ -370,56 +400,89 @@ function BookingListCard({
   onOpen: () => void;
   onChat: () => void;
 }) {
-  const bookingId = normalizeMongoId(booking._id);
   const itemName = bookingItemName(booking);
-  const route = bookingRouteLabel(booking);
+  const { origin, destination } = bookingEndpoints(booking);
   const requester = bookingPartyName(booking.requesterId, 'Requester');
   const traveler = bookingPartyName(booking.travelerId, 'Traveler');
+  const progressPct = bookingProgressPct(booking.status);
 
   return (
-    <Paper key={bookingId} p="md" withBorder>
-      <Group justify="space-between" wrap="wrap">
-        <div>
-          <Text fw={700}>{booking.bookingRef}</Text>
-          <Text fz={13} c="dimmed">
+    <Paper className="glass-card glass-card-hover" p="lg" radius="xl" mb="sm">
+      <Group justify="space-between" align="flex-start" wrap="nowrap">
+        <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+          <Group gap={8} align="center" wrap="wrap">
+            <Text fw={700} size="lg" c={colors.textPrimary}>
+              {origin}
+            </Text>
+            <IconArrowRight size={16} color={colors.primaryTeal} />
+            <Text fw={700} size="lg" c={colors.textPrimary}>
+              {destination}
+            </Text>
+          </Group>
+          <Text size="sm" c={colors.textSecondary}>
             {itemName}
-            {route ? ` · ${route}` : ''}
           </Text>
-          <Text fz={12} c="dimmed" mt={4}>
-            {requester} · {traveler}
-          </Text>
-          <Badge mt="xs">{booking.status}</Badge>
-        </div>
-        <Group gap="xs">
-          <Button
-            variant="subtle"
-            size="xs"
-            leftSection={<IconMessage size={14} />}
-            onClick={onChat}
+          <Group gap={8} mt={4}>
+            <Text size="xs" c={colors.subtleText}>
+              {requester}
+            </Text>
+            <Text size="xs" c={colors.subtleText}>
+              ·
+            </Text>
+            <Text size="xs" c={colors.subtleText}>
+              {traveler}
+            </Text>
+          </Group>
+        </Stack>
+        <Stack align="flex-end" gap={8}>
+          <Badge
+            radius="xl"
+            size="sm"
+            color={statusBadgeColor(booking.status)}
+            variant="light"
+            styles={{ root: { textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 } }}
           >
-            Chat
-          </Button>
-          <Button size="xs" onClick={onOpen}>
-            Open
-          </Button>
-        </Group>
+            {booking.status.replace(/_/g, ' ')}
+          </Badge>
+          <Text fw={700} c={colors.primaryTeal}>
+            {booking.bookingRef}
+          </Text>
+        </Stack>
       </Group>
-      <Progress
-        value={
-          {
-            pending_acceptance: 20,
-            countered: 35,
-            confirmed: 45,
-            paid: 55,
-            in_transit: 70,
-            delivered: 85,
-            completed: 100,
-            cancelled: 0,
-            disputed: 50,
-          }[booking.status] ?? 10
-        }
-        mt="sm"
-      />
+      <Box
+        mt="md"
+        style={{
+          height: 3,
+          borderRadius: 999,
+          background: 'rgba(0,0,0,0.06)',
+          overflow: 'hidden',
+        }}
+      >
+        <Box
+          style={{
+            height: '100%',
+            width: `${progressPct}%`,
+            background: 'linear-gradient(90deg, #00C9A7, #2D86FF)',
+            borderRadius: 999,
+            transition: 'width 0.5s ease',
+          }}
+        />
+      </Box>
+      <Group justify="flex-end" mt="md" gap={8}>
+        <Button
+          size="xs"
+          variant="subtle"
+          color="gray"
+          radius="xl"
+          leftSection={<IconMessage size={14} />}
+          onClick={onChat}
+        >
+          Chat
+        </Button>
+        <Button size="xs" radius="xl" color="teal" onClick={onOpen}>
+          Open
+        </Button>
+      </Group>
     </Paper>
   );
 }
@@ -465,14 +528,16 @@ export function BookingsListPage() {
   }
 
   return (
-    <Stack gap="md">
-      <Title order={2}>My bookings</Title>
+    <Stack gap="md" pb={48}>
+      <PageHeader section="Bookings" title="My bookings" />
+
       <Tabs
         value={role}
         onChange={(v) => {
           setRole((v as typeof role) ?? 'all');
           setPage(1);
         }}
+        styles={glassTabsStyles}
       >
         <Tabs.List>
           <Tabs.Tab value="all">All roles</Tabs.Tab>
@@ -486,6 +551,7 @@ export function BookingsListPage() {
           setStatusTab(v ?? 'all');
           setPage(1);
         }}
+        styles={glassTabsStyles}
       >
         <Tabs.List>
           <Tabs.Tab value="all">All</Tabs.Tab>
@@ -510,7 +576,16 @@ export function BookingsListPage() {
           </Button>
         </Stack>
       ) : rows.length === 0 ? (
-        <Text c="dimmed">No bookings found for this filter.</Text>
+        <Paper className="glass-card" p="xl" radius="xl">
+          <Stack align="center" py="md" gap="sm">
+            <ThemeIcon size={48} radius="xl" variant="light" color="teal">
+              <IconMessage size={24} />
+            </ThemeIcon>
+            <Text c={colors.subtleText} size="sm">
+              No bookings found for this filter.
+            </Text>
+          </Stack>
+        </Paper>
       ) : (
         rows.map((b) => {
           const bookingId = normalizeMongoId(b._id);

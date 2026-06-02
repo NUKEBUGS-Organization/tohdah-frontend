@@ -1,117 +1,145 @@
-import { Box, Button, Center, Group, Stack, Text, Title, UnstyledButton } from '@mantine/core';
-import { IconArrowRight, IconBrandFacebook, IconBrandInstagram, IconBrandX } from '@tabler/icons-react';
-import { Link } from 'react-router-dom';
-import { BrandWordmark } from '../components/BrandWordmark';
-import { colors } from '../theme';
+import { Box, Button, Group, Stack, Text, Title } from '@mantine/core';
+import { useNavigate } from 'react-router-dom';
 
 export function SplashPage() {
+  const navigate = useNavigate();
+
   return (
     <Box
-      pos="relative"
-      mih="100vh"
-      py={{ base: 100, sm: 140 }}
-      px={24}
       style={{
-        backgroundColor: colors.navyDeep,
-        backgroundImage: `
-          radial-gradient(circle at 0% 0%, rgba(0,201,167,0.12) 0%, transparent 50%),
-          radial-gradient(circle at 100% 100%, rgba(45,134,255,0.12) 0%, transparent 50%)
-        `,
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #0F1F3D 0%, #1E2A4A 50%, #0D2137 100%)',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
       <Box
-        pos="absolute"
-        inset={0}
-        opacity={0.15}
         style={{
+          position: 'absolute',
+          top: '-20%',
+          left: '-10%',
+          width: '600px',
+          height: '600px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(0,201,167,0.15) 0%, transparent 70%)',
+          filter: 'blur(40px)',
           pointerEvents: 'none',
-          backgroundImage: `
-            radial-gradient(circle at 20% 30%, rgba(0,201,167,0.08) 0%, transparent 40%),
-            radial-gradient(circle at 80% 70%, rgba(45,134,255,0.1) 0%, transparent 45%)
-          `,
+        }}
+      />
+      <Box
+        style={{
+          position: 'absolute',
+          bottom: '-10%',
+          right: '-5%',
+          width: '500px',
+          height: '500px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(45,134,255,0.12) 0%, transparent 70%)',
+          filter: 'blur(40px)',
+          pointerEvents: 'none',
         }}
       />
 
-      <Stack align="center" gap={0} pos="relative" maw={672} mx="auto">
-        <Box mb={40}>
-          <BrandWordmark fz={48} />
+      <Group justify="space-between" px={48} py={24} style={{ position: 'relative', zIndex: 1 }}>
+        <Text fw={800} size="xl" c="white">
+          Tohdah
+        </Text>
+        <Button variant="subtle" c="white" onClick={() => navigate('/login')}>
+          Log in
+        </Button>
+      </Group>
+
+      <Stack
+        align="center"
+        justify="center"
+        style={{ minHeight: '80vh', position: 'relative', zIndex: 1 }}
+        gap={0}
+        px={24}
+      >
+        <Box
+          mb={24}
+          style={{
+            background: 'rgba(0,201,167,0.15)',
+            border: '1px solid rgba(0,201,167,0.3)',
+            borderRadius: '999px',
+            padding: '6px 16px',
+            display: 'inline-block',
+          }}
+        >
+          <Text size="sm" c="#00C9A7" fw={500}>
+            ✈️ Travel · Earn · Impact
+          </Text>
         </Box>
 
-        <Stack align="center" gap={20} mb={40}>
-          <Title
-            order={1}
-            ta="center"
-            c="white"
-            fz={{ base: 30, sm: 40 }}
-            fw={700}
-            lts={-0.5}
-            lh={1.15}
-          >
-            Turn travel into opportunity
-          </Title>
-          <Text
-            ta="center"
-            c={colors.slate}
-            fz={{ base: 15, sm: 17 }}
-            lh={1.65}
-            maw={480}
-          >
-            Earn money while you travel or get your items delivered quickly and safely.
-          </Text>
-        </Stack>
+        <Title
+          ta="center"
+          style={{
+            fontSize: 'clamp(40px, 6vw, 72px)',
+            fontWeight: 800,
+            lineHeight: 1.1,
+            color: 'white',
+            maxWidth: 800,
+            marginBottom: 24,
+          }}
+        >
+          Turn travel into{' '}
+          <span className="gradient-text" style={{ WebkitTextFillColor: 'transparent' }}>
+            opportunity
+          </span>
+        </Title>
 
-        <Group gap={16} justify="center" wrap="wrap">
+        <Text c="rgba(255,255,255,0.65)" size="xl" ta="center" maw={520} mb={48} lh={1.7}>
+          Earn money carrying items while you travel. Send packages with trusted travelers. Support
+          your community.
+        </Text>
+
+        <Group gap={16} mb={80}>
           <Button
-            component={Link}
-            to="/signup"
             size="lg"
             radius="xl"
-            w={{ base: '100%', xs: 200 }}
-            rightSection={<IconArrowRight size={18} />}
-            styles={{
-              root: {
-                background: `linear-gradient(90deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
-                border: 'none',
-                boxShadow:
-                  '0 10px 15px -3px rgba(20,184,166,0.25), 0 4px 6px -4px rgba(20,184,166,0.2)',
-              },
+            style={{
+              background: 'linear-gradient(135deg, #00C9A7, #2D86FF)',
+              border: 'none',
+              padding: '14px 36px',
+              fontSize: 16,
+              fontWeight: 600,
+              boxShadow: '0 8px 32px rgba(0,201,167,0.3)',
             }}
+            onClick={() => navigate('/signup')}
           >
-            Get Started
+            Get Started →
           </Button>
           <Button
-            component={Link}
-            to="/login"
-            variant="default"
             size="lg"
             radius="xl"
-            w={{ base: '100%', xs: 200 }}
-            styles={{
-              root: {
-                background: 'rgba(255,255,255,0.05)',
-                border: '2px solid rgba(255,255,255,0.35)',
-                color: 'white',
-                backdropFilter: 'blur(2px)',
-              },
+            variant="outline"
+            style={{
+              borderColor: 'rgba(255,255,255,0.3)',
+              color: 'white',
+              padding: '14px 36px',
             }}
+            onClick={() => navigate('/login')}
           >
-            Login
+            Log In
           </Button>
         </Group>
 
-        <Center mt={{ base: 72, sm: 96 }}>
-          <Group gap={20}>
-            <UnstyledButton aria-label="Instagram">
-              <IconBrandInstagram size={22} color="rgba(255,255,255,0.55)" />
-            </UnstyledButton>
-            <UnstyledButton aria-label="Facebook">
-              <IconBrandFacebook size={22} color="rgba(255,255,255,0.55)" />
-            </UnstyledButton>
-            <UnstyledButton aria-label="X">
-              <IconBrandX size={20} color="rgba(255,255,255,0.55)" />
-            </UnstyledButton>
-          </Group>
-        </Center>
+        <Group gap={48} justify="center">
+          {[
+            { value: '50K+', label: 'Travelers' },
+            { value: '180+', label: 'Countries' },
+            { value: '99%', label: 'Safe delivery' },
+          ].map((stat) => (
+            <Stack key={stat.label} align="center" gap={4}>
+              <Text fw={700} size="xl" c="white">
+                {stat.value}
+              </Text>
+              <Text size="sm" c="rgba(255,255,255,0.5)">
+                {stat.label}
+              </Text>
+            </Stack>
+          ))}
+        </Group>
       </Stack>
     </Box>
   );

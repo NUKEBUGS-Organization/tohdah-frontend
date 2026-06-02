@@ -27,6 +27,7 @@ import {
 import { useForm } from '@mantine/form';
 import {
   IconBasket,
+  IconCalendar,
   IconCreditCard,
   IconMapPin,
   IconMessage,
@@ -58,7 +59,8 @@ import {
   FRIENDLY_LOAD_ERROR,
   resolveUserId,
 } from '../../../utils/screen-data';
-import { colors, requesterUi as RQ } from '../../../theme';
+import { colors, glassTabsStyles, requesterUi as RQ } from '../../../theme';
+import { PageHeader } from '../../../components/PageHeader';
 
 function requestDocId(r: DeliveryRequest): string {
   return r._id ?? (r as DeliveryRequest & { id?: string }).id ?? '';
@@ -485,6 +487,23 @@ function statusTab(s: string): DeliveryRequest['status'] | undefined {
   return s as DeliveryRequest['status'];
 }
 
+function requestStatusColor(status: DeliveryRequest['status']): string {
+  if (status === 'matched' || status === 'confirmed') return 'teal';
+  if (status === 'in_transit') return 'blue';
+  if (status === 'completed') return 'green';
+  if (status === 'cancelled') return 'red';
+  return 'gray';
+}
+
+function formatRequestDate(iso: string | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export function RequesterRequestsListPage() {
   const navigate = useNavigate();
   const { user, isAuthenticated, isRestoring } = useAuth();
@@ -513,8 +532,16 @@ export function RequesterRequestsListPage() {
 
   return (
     <Stack gap="lg" pb={48}>
-      <Title order={2}>My requests</Title>
-      <Tabs value={tab} onChange={(v) => { setTab(v ?? 'all'); setPage(1); }}>
+      <PageHeader section="Requester" title="My requests" />
+
+      <Tabs
+        value={tab}
+        onChange={(v) => {
+          setTab(v ?? 'all');
+          setPage(1);
+        }}
+        styles={glassTabsStyles}
+      >
         <Tabs.List>
           <Tabs.Tab value="all">All</Tabs.Tab>
           <Tabs.Tab value="pending">Pending</Tabs.Tab>
@@ -526,44 +553,85 @@ export function RequesterRequestsListPage() {
 
       {showLoading ? (
         <Stack gap="sm">
-          <Skeleton height={88} />
-          <Skeleton height={88} />
+          <Skeleton height={88} radius="xl" />
+          <Skeleton height={88} radius="xl" />
         </Stack>
       ) : error ? (
         <Stack gap="sm">
-          <Text c="dimmed" size="sm">
+          <Text c={colors.textSecondary} size="sm">
             {FRIENDLY_LOAD_ERROR}
           </Text>
-          <Button variant="light" size="xs" onClick={() => void refetch()}>
+          <Button variant="light" size="xs" radius="xl" onClick={() => void refetch()}>
             Retry
           </Button>
         </Stack>
       ) : rows.length === 0 ? (
-        <Text c="dimmed">No requests yet. Create one to get matched with travelers.</Text>
+        <Paper className="glass-card" p="xl" radius="xl">
+          <Stack align="center" py="md" gap="sm">
+            <IconPackage size={32} color={colors.subtleText} stroke={1.5} />
+            <Text c={colors.subtleText} size="sm">
+              No requests yet. Create one to get matched with travelers.
+            </Text>
+          </Stack>
+        </Paper>
       ) : (
         <Stack gap="sm">
           {rows.map((r: DeliveryRequest) => (
-            <Paper key={requestDocId(r)} p="md" withBorder>
-              <Group justify="space-between">
-                <div>
-                  <Text fw={700}>{r.itemName}</Text>
-                  <Text fz={13} c="dimmed">
-                    {r.origin} → {r.destination}
+            <Paper key={requestDocId(r)} className="glass-card glass-card-hover" p="lg" radius="xl">
+              <Group justify="space-between" align="flex-start" wrap="nowrap">
+                <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+                  <Text fw={700} size="md" c={colors.textPrimary}>
+                    {r.itemName}
                   </Text>
-                </div>
-                <Badge>{r.status}</Badge>
-                <Button
-                  size="xs"
-                  variant="light"
-                  onClick={() => {
-                    const rid = requestDocId(r);
-                    navigate(`/app/requester/requests/detail?requestId=${encodeURIComponent(rid)}`, {
-                      state: { requestId: rid },
-                    });
-                  }}
-                >
-                  Details
-                </Button>
+                  <Group gap={6}>
+                    <IconMapPin size={13} color={colors.subtleText} />
+                    <Text size="sm" c={colors.textSecondary}>
+                      {r.origin} → {r.destination}
+                    </Text>
+                  </Group>
+                  <Group gap={6} mt={2}>
+                    <IconCalendar size={13} color={colors.subtleText} />
+                    <Text size="xs" c={colors.subtleText}>
+                      Due {formatRequestDate(r.deliveryDeadline)}
+                    </Text>
+                    {r.budget != null && r.budget > 0 ? (
+                      <>
+                        <Text size="xs" c={colors.subtleText}>
+                          ·
+                        </Text>
+                        <Text size="xs" c={colors.subtleText}>
+                          Budget ${r.budget}
+                        </Text>
+                      </>
+                    ) : null}
+                  </Group>
+                </Stack>
+                <Stack align="flex-end" gap={8}>
+                  <Badge
+                    radius="xl"
+                    size="sm"
+                    color={requestStatusColor(r.status)}
+                    variant="light"
+                    styles={{
+                      root: { textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' },
+                    }}
+                  >
+                    {r.status.replace(/_/g, ' ')}
+                  </Badge>
+                  <Button
+                    size="xs"
+                    radius="xl"
+                    color="teal"
+                    onClick={() => {
+                      const rid = requestDocId(r);
+                      navigate(`/app/requester/requests/detail?requestId=${encodeURIComponent(rid)}`, {
+                        state: { requestId: rid },
+                      });
+                    }}
+                  >
+                    Details
+                  </Button>
+                </Stack>
               </Group>
             </Paper>
           ))}

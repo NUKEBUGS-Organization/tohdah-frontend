@@ -13,4 +13,49 @@ body,
 
 #root {
   min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+body {
+  background: linear-gradient(135deg, #f0f4f8 0%, #e8f5f0 40%, #eef2ff 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  color: #1a202c;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(0, 201, 167, 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(45, 134, 255, 0.05) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 18px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #00c9a7, #2d86ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glass-card-hover {
+  transition: all 0.2s ease;
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
