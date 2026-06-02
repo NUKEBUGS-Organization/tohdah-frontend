@@ -1,5 +1,8 @@
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
+const ACCESS_TOKEN_KEY = 'tohdah_access';
+const REFRESH_TOKEN_KEY = 'tohdah_refresh';
+
 export interface ApiErrorBody {
   statusCode: number;
   message: string;
@@ -18,34 +21,32 @@ export class ApiRequestError extends Error {
   }
 }
 
-let accessTokenMem: string | null = null;
 let refreshPromise: Promise<boolean> | null = null;
 
 export function getAccessToken(): string | null {
-  return accessTokenMem;
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
 export function setAccessToken(token: string): void {
-  accessTokenMem = token;
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(ACCESS_TOKEN_KEY, token);
 }
-
-const REFRESH_KEY = 'tohdah_refresh';
 
 export function getRefreshToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(REFRESH_KEY);
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 export function setRefreshToken(token: string): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(REFRESH_KEY, token);
+  localStorage.setItem(REFRESH_TOKEN_KEY, token);
 }
 
 export function clearTokens(): void {
-  accessTokenMem = null;
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem(REFRESH_KEY);
-  }
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 async function tryRefreshSession(): Promise<boolean> {
@@ -81,6 +82,8 @@ export type ApiRequestOptions = {
   skipAuth?: boolean;
   isFormData?: boolean;
   /** Internal: prevent infinite 401 → refresh loop */
+  isRetry?: boolean;
+  /** @deprecated use isRetry */
   _didRefresh?: boolean;
 };
 
@@ -92,7 +95,8 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const skipAuth = options?.skipAuth === true;
   const isFormData = options?.isFormData === true;
-  const didRefresh = options?._didRefresh === true;
+  const isRetry =
+    options?.isRetry === true || options?._didRefresh === true;
 
   const headers: Record<string, string> = {};
   if (!isFormData) {
@@ -115,14 +119,15 @@ export async function apiRequest<T>(
         : isFormData && body instanceof FormData
           ? body
           : JSON.stringify(body),
+    cache: method === 'GET' ? 'no-store' : undefined,
   });
 
-  if (res.status === 401 && !skipAuth && !didRefresh) {
+  if (res.status === 401 && !skipAuth && !isRetry) {
     const ok = await tryRefreshSession();
     if (ok) {
       return apiRequest<T>(method, path, body, {
         ...options,
-        _didRefresh: true,
+        isRetry: true,
       });
     }
     clearTokens();

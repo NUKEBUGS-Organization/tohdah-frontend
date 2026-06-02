@@ -28,8 +28,13 @@ function bookingIdFromRow(row: InboxRow): string {
 
 export const chatService = {
   getInbox: async (): Promise<ConversationSummary[]> => {
-    const raw = await api.get<InboxRow[]>('/chat/my');
-    const rows = Array.isArray(raw) ? raw : [];
+    const raw = await api.get<InboxRow[] | { data?: InboxRow[] }>('/chat/my');
+    if (!raw) return [];
+    const rows = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw.data)
+        ? raw.data
+        : [];
     return rows.map((row) => ({
       bookingId: bookingIdFromRow(row),
       bookingRef: row.bookingRef,

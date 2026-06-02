@@ -1,6 +1,7 @@
 import {
   ActionIcon,
   Affix,
+  Anchor,
   Badge,
   Box,
   Button,
@@ -24,20 +25,48 @@ import {
   UnstyledButton,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconBasket, IconMapPin, IconPackage, IconPlus } from '@tabler/icons-react';
+import {
+  IconBasket,
+  IconCreditCard,
+  IconMapPin,
+  IconMessage,
+  IconPackage,
+  IconPlus,
+} from '@tabler/icons-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import type { DeliveryRequest, Trip } from '../../../api/types';
+import type { Booking, DeliveryRequest, Trip } from '../../../api/types';
 import { ApiRequestError } from '../../../api/client';
+import {
+  bookingPartyId,
+  findBookingForRequest,
+  normalizeMongoId,
+  paginatedRows,
+  paginatedTotal,
+} from '../../../api/booking-utils';
 import { bookingsService } from '../../../api/services/bookings.service';
 import type { CreateRequestData } from '../../../api/services/requests.service';
 import { requestsService } from '../../../api/services/requests.service';
 import { tripsService } from '../../../api/services/trips.service';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '../../../context/AuthContext';
 import { useApi } from '../../../hooks/useApi';
 import { usePagination } from '../../../hooks/usePagination';
 import { notify } from '../../../utils/notify';
+import {
+  emptyPaginated,
+  FRIENDLY_LOAD_ERROR,
+  resolveUserId,
+} from '../../../utils/screen-data';
 import { colors, requesterUi as RQ } from '../../../theme';
-import { ShellCard } from './shared';
+
+function requestDocId(r: DeliveryRequest): string {
+  return r._id ?? (r as DeliveryRequest & { id?: string }).id ?? '';
+}
+
+function bookingDocId(b: Booking): string {
+  return b._id ?? (b as Booking & { id?: string }).id ?? '';
+}
 
 function OrderSummaryPanel({
   variant,
@@ -198,6 +227,7 @@ export function RequesterSelectTypePage() {
 
 export function RequesterPostSupportPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const form = useForm({
     initialValues: {
       itemName: '',
@@ -240,6 +270,7 @@ export function RequesterPostSupportPage() {
         supportingNotes: values.supportingNotes.trim() || undefined,
       };
       await requestsService.create(body);
+      await queryClient.invalidateQueries({ queryKey: ['requests'] });
       notify.success('Support request posted');
       navigate('/app/requester/requests');
     } catch (e) {
@@ -321,6 +352,7 @@ export function RequesterPostSupportPage() {
 
 export function RequesterPostDeliveryPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const form = useForm({
     initialValues: {
       itemName: '',
@@ -358,6 +390,7 @@ export function RequesterPostDeliveryPage() {
         urgencyLevel: values.urgencyLevel,
       };
       await requestsService.create(body);
+      await queryClient.invalidateQueries({ queryKey: ['requests'] });
       notify.success('Request posted');
       navigate('/app/requester/requests');
     } catch (e) {
@@ -454,23 +487,29 @@ function statusTab(s: string): DeliveryRequest['status'] | undefined {
 
 export function RequesterRequestsListPage() {
   const navigate = useNavigate();
+  const { user, isAuthenticated, isRestoring } = useAuth();
+  const userId = resolveUserId(user);
+  const authReady = isAuthenticated && !isRestoring && !!userId;
   const [tab, setTab] = useState('all');
   const { page, limit, setPage } = usePagination(10);
 
   const st = statusTab(tab);
 
-  const { data, isLoading } = useApi(
-    () =>
+  const { data, isFetching, error, refetch } = useQuery({
+    queryKey: ['requests', 'my', tab, userId, page, limit],
+    queryFn: () =>
       requestsService.getMy({
         status: st,
         page,
         limit,
       }),
-    [tab, page, limit],
-  );
+    enabled: authReady,
+  });
 
-  const rows = data?.data ?? [];
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
+  const rows = paginatedRows(data);
+  const total = paginatedTotal(data);
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const showLoading = !authReady || isFetching;
 
   return (
     <Stack gap="lg" pb={48}>
@@ -485,14 +524,26 @@ export function RequesterRequestsListPage() {
         </Tabs.List>
       </Tabs>
 
-      {isLoading ? (
-        <Skeleton height={100} />
+      {showLoading ? (
+        <Stack gap="sm">
+          <Skeleton height={88} />
+          <Skeleton height={88} />
+        </Stack>
+      ) : error ? (
+        <Stack gap="sm">
+          <Text c="dimmed" size="sm">
+            {FRIENDLY_LOAD_ERROR}
+          </Text>
+          <Button variant="light" size="xs" onClick={() => void refetch()}>
+            Retry
+          </Button>
+        </Stack>
       ) : rows.length === 0 ? (
-        <Text c="dimmed">No requests yet.</Text>
+        <Text c="dimmed">No requests yet. Create one to get matched with travelers.</Text>
       ) : (
         <Stack gap="sm">
           {rows.map((r: DeliveryRequest) => (
-            <Paper key={r._id} p="md" withBorder>
+            <Paper key={requestDocId(r)} p="md" withBorder>
               <Group justify="space-between">
                 <div>
                   <Text fw={700}>{r.itemName}</Text>
@@ -504,9 +555,12 @@ export function RequesterRequestsListPage() {
                 <Button
                   size="xs"
                   variant="light"
-                  onClick={() =>
-                    navigate('/app/requester/requests/detail', { state: { requestId: r._id } })
-                  }
+                  onClick={() => {
+                    const rid = requestDocId(r);
+                    navigate(`/app/requester/requests/detail?requestId=${encodeURIComponent(rid)}`, {
+                      state: { requestId: rid },
+                    });
+                  }}
                 >
                   Details
                 </Button>
@@ -523,45 +577,84 @@ export function RequesterRequestsListPage() {
 
 function requestIdFromLoc(location: ReturnType<typeof useLocation>, sp: URLSearchParams): string | null {
   const st = location.state as { requestId?: string } | null;
-  if (st?.requestId) return st.requestId;
-  return sp.get('requestId');
+  const fromState = st?.requestId ? normalizeMongoId(st.requestId) : '';
+  const fromQuery = sp.get('requestId') ? normalizeMongoId(sp.get('requestId')) : '';
+  return fromState || fromQuery || null;
 }
 
 export function RequesterRequestDetailPage() {
+  const navigate = useNavigate();
   const location = useLocation();
   const [sp] = useSearchParams();
+  const { user } = useAuth();
+  const userId = resolveUserId(user);
   const requestId = requestIdFromLoc(location, sp);
 
-  const { data: req, isLoading } = useApi(
+  const { data: req, isLoading, error: reqError } = useApi(
     () => (requestId ? requestsService.getById(requestId) : Promise.resolve(null)),
     [requestId],
   );
 
-  const { data: bookings } = useApi(
-    () => bookingsService.getMy({ role: 'requester', limit: 100 }),
-    [requestId],
+  const {
+    data: bookingsPage,
+    isLoading: bookingsLoading,
+  } = useApi(
+    () =>
+      userId
+        ? bookingsService.getMyForRequester(userId, { limit: 100 })
+        : Promise.resolve(emptyPaginated<Booking>(100)),
+    [userId],
   );
 
-  const booking = useMemo(() => {
-    if (!requestId) return null;
-    return (bookings?.data ?? []).find((b) => {
-      const rid =
-        typeof b.requestId === 'object' && b.requestId && '_id' in b.requestId
-          ? String((b.requestId as DeliveryRequest)._id)
-          : String(b.requestId);
-      return rid === requestId;
-    });
-  }, [bookings, requestId]);
+  const linkedBooking = useMemo(() => {
+    const target =
+      normalizeMongoId(requestId) ||
+      (req ? normalizeMongoId(requestDocId(req)) : '');
+    if (!target) return null;
+    return findBookingForRequest(bookingsPage?.data ?? [], target);
+  }, [bookingsPage, requestId, req]);
 
   if (!requestId) return <Text>Missing request.</Text>;
-  if (isLoading || !req) return <Skeleton height={160} />;
+  if (isLoading) {
+    return (
+      <Stack gap="sm">
+        <Skeleton height={40} />
+        <Skeleton height={120} />
+      </Stack>
+    );
+  }
+  if (reqError || !req) {
+    return (
+      <Text c="dimmed" size="sm">
+        {reqError ? FRIENDLY_LOAD_ERROR : 'Request not found.'}
+      </Text>
+    );
+  }
+
+  const paidViaBooking =
+    linkedBooking != null &&
+    ['paid', 'in_transit', 'delivered', 'completed'].includes(linkedBooking.status);
 
   const steps = [
     { label: 'Posted', done: true },
-    { label: 'Matched', done: ['matched', 'confirmed', 'paid', 'in_transit', 'delivered', 'completed'].includes(req.status) },
-    { label: 'In transit', done: ['in_transit', 'delivered', 'completed'].includes(req.status) },
+    {
+      label: 'Matched',
+      done: ['matched', 'confirmed', 'in_transit', 'delivered', 'completed'].includes(req.status),
+    },
+    {
+      label: 'Confirmed',
+      done: ['confirmed', 'in_transit', 'delivered', 'completed'].includes(req.status),
+    },
+    { label: 'Paid', done: paidViaBooking },
+    {
+      label: 'In transit',
+      done: ['in_transit', 'delivered', 'completed'].includes(req.status),
+    },
+    { label: 'Delivered', done: ['delivered', 'completed'].includes(req.status) },
     { label: 'Completed', done: req.status === 'completed' },
   ];
+
+  const timelineActive = Math.max(0, steps.filter((s) => s.done).length - 1);
 
   return (
     <Stack gap="lg">
@@ -571,23 +664,107 @@ export function RequesterRequestDetailPage() {
         {req.origin} → {req.destination}
       </Text>
 
-      <Timeline active={steps.filter((s) => s.done).length - 1} bulletSize={24} lineWidth={2}>
+      <Timeline active={timelineActive} bulletSize={20} lineWidth={2}>
         {steps.map((s) => (
-          <Timeline.Item key={s.label} title={s.label}>
-            <Text c="dimmed" fz="sm" />
-          </Timeline.Item>
+          <Timeline.Item
+            key={s.label}
+            title={s.label}
+            color={s.done ? 'teal' : 'gray'}
+          />
         ))}
       </Timeline>
 
-      {booking ? (
-        <ShellCard>
-          <Text fw={700}>Booking {booking.bookingRef}</Text>
-          <Text fz={13}>Status: {booking.status}</Text>
-          <Button component={Link} to="/app/tracking/live" state={{ bookingId: booking._id }}>
-            Track
+      {bookingsLoading ? (
+        <Skeleton height={140} mt="xl" />
+      ) : linkedBooking ? (
+        <Paper withBorder mt="xl" p="lg" radius="md">
+          <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+            <Stack gap="xs">
+              <Text fw={700} size="lg">
+                {linkedBooking.bookingRef}
+              </Text>
+              <Badge
+                color={
+                  linkedBooking.status === 'confirmed'
+                    ? 'teal'
+                    : linkedBooking.status === 'paid'
+                      ? 'blue'
+                      : linkedBooking.status === 'completed'
+                        ? 'green'
+                        : 'gray'
+                }
+                size="md"
+              >
+                {linkedBooking.status.replace(/_/g, ' ').toUpperCase()}
+              </Badge>
+              {(linkedBooking.agreedFee ?? linkedBooking.offeredFee) != null && (
+                <Text size="sm" c="dimmed">
+                  Agreed fee: ${linkedBooking.agreedFee ?? linkedBooking.offeredFee}
+                </Text>
+              )}
+              {linkedBooking.podConfirmationCode ? (
+                <Text size="sm" fw={500}>
+                  POD Code: {linkedBooking.podConfirmationCode}
+                </Text>
+              ) : null}
+            </Stack>
+            <Stack gap="sm">
+              {linkedBooking.status === 'confirmed' && (
+                <Button
+                  color="teal"
+                  size="md"
+                  leftSection={<IconCreditCard size={16} />}
+                  onClick={() =>
+                    navigate(
+                      `/app/checkout?bookingId=${encodeURIComponent(bookingDocId(linkedBooking))}`,
+                      { state: { bookingId: bookingDocId(linkedBooking) } },
+                    )
+                  }
+                >
+                  Pay Now — ${linkedBooking.agreedFee ?? linkedBooking.offeredFee}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                leftSection={<IconMessage size={16} />}
+                onClick={() =>
+                  navigate('/app/chat/thread', {
+                    state: {
+                      bookingId: bookingDocId(linkedBooking),
+                      otherUserId: bookingPartyId(linkedBooking.travelerId),
+                    },
+                  })
+                }
+              >
+                Message Traveler
+              </Button>
+              <Button variant="subtle" size="sm" onClick={() => navigate('/app/bookings')}>
+                View All Bookings
+              </Button>
+              {['paid', 'in_transit', 'delivered', 'completed'].includes(linkedBooking.status) && (
+                <Button
+                  variant="light"
+                  size="sm"
+                  component={Link}
+                  to={`/app/tracking/live?bookingId=${encodeURIComponent(bookingDocId(linkedBooking))}`}
+                >
+                  Track delivery
+                </Button>
+              )}
+            </Stack>
+          </Group>
+        </Paper>
+      ) : (
+        <Paper withBorder mt="xl" p="md" radius="md">
+          <Text c="dimmed" size="sm" mb="sm">
+            Booking details not loaded yet.
+          </Text>
+          <Button variant="outline" size="sm" onClick={() => navigate('/app/bookings')}>
+            View My Bookings
           </Button>
-        </ShellCard>
-      ) : null}
+        </Paper>
+      )}
     </Stack>
   );
 }
@@ -636,7 +813,9 @@ export function RequesterEditRequestPage() {
         deliveryDeadline: new Date(form.values.deliveryDeadline).toISOString(),
       });
       notify.success('Updated');
-      navigate('/app/requester/requests/detail', { state: { requestId } });
+      navigate(`/app/requester/requests/detail?requestId=${encodeURIComponent(requestId)}`, {
+        state: { requestId },
+      });
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'Update failed');
     }
@@ -659,7 +838,6 @@ export function RequesterEditRequestPage() {
 }
 
 export function RequesterBrowseTripsPage() {
-  const navigate = useNavigate();
   const { page, limit, setPage } = usePagination(10);
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
@@ -676,7 +854,7 @@ export function RequesterBrowseTripsPage() {
     [origin, destination, socialImpact, page, limit],
   );
 
-  const { data, isLoading, refetch } = useApi(() => tripsService.browse(params), [
+  const { data, isLoading, error: browseError, refetch } = useApi(() => tripsService.browse(params), [
     origin,
     destination,
     socialImpact,
@@ -684,36 +862,75 @@ export function RequesterBrowseTripsPage() {
     limit,
   ]);
 
-  const { data: myRequests } = useApi(() => requestsService.getMy({ status: 'pending', limit: 20 }), []);
-
   const [modal, setModal] = useState<{ trip: Trip } | null>(null);
-  const [pickReq, setPickReq] = useState('');
-  const [fee, setFee] = useState(40);
+  const [pendingRequests, setPendingRequests] = useState<DeliveryRequest[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [selectedRequestId, setSelectedRequestId] = useState('');
+  const [offeredFee, setOfferedFee] = useState(20);
+  const [matchLoading, setMatchLoading] = useState(false);
 
-  const match = async () => {
-    if (!modal || !pickReq) {
+  const closeMatchModal = () => {
+    setModal(null);
+    setSelectedRequestId('');
+    setPendingRequests([]);
+    setOfferedFee(20);
+  };
+
+  const openMatchModal = async (trip: Trip) => {
+    setModal({ trip });
+    setSelectedRequestId('');
+    setOfferedFee(20);
+    setPendingLoading(true);
+    try {
+      const result = await requestsService.getMy({ status: 'pending', limit: 50 });
+      setPendingRequests(result.data.filter((r) => r.status === 'pending'));
+    } catch {
+      setPendingRequests([]);
+      notify.error('Failed to load your requests');
+    } finally {
+      setPendingLoading(false);
+    }
+  };
+
+  const requestOptions = pendingRequests.map((r) => ({
+    value: requestDocId(r),
+    label: `${r.itemName} — ${r.origin} → ${r.destination}`,
+  }));
+
+  const handleConfirmMatch = async () => {
+    if (!modal) return;
+    if (!selectedRequestId) {
       notify.error('Select one of your pending requests');
       return;
     }
+    if (!offeredFee || offeredFee <= 0) {
+      notify.error('Enter a valid fee');
+      return;
+    }
+    const tripId = modal.trip._id ?? (modal.trip as Trip & { id?: string }).id;
+    if (!tripId) {
+      notify.error('Trip is missing an id');
+      return;
+    }
+    setMatchLoading(true);
     try {
       await bookingsService.match({
-        requestId: pickReq,
-        tripId: modal.trip._id,
-        offeredFee: fee,
+        requestId: selectedRequestId,
+        tripId,
+        offeredFee,
       });
-      notify.success('Booking created');
-      setModal(null);
+      notify.success('Request sent to traveler!');
+      closeMatchModal();
       void refetch();
-      navigate('/app/bookings');
     } catch (e) {
-      notify.error(e instanceof Error ? e.message : 'Match failed');
+      notify.error(e instanceof Error ? e.message : 'Failed to send request');
+    } finally {
+      setMatchLoading(false);
     }
   };
 
   const rows = data?.data ?? [];
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
-
-  const pendingRequests = (myRequests?.data ?? []).filter((r) => r.status === 'pending');
 
   return (
     <Stack gap="md" pb={48}>
@@ -734,7 +951,18 @@ export function RequesterBrowseTripsPage() {
       <Button onClick={() => { setPage(1); void refetch(); }}>Apply filters</Button>
 
       {isLoading ? (
-        <Skeleton height={120} />
+        <Stack gap="sm">
+          <Skeleton height={88} />
+          <Skeleton height={88} />
+        </Stack>
+      ) : browseError ? (
+        <Text c="dimmed" size="sm">
+          {FRIENDLY_LOAD_ERROR}
+        </Text>
+      ) : rows.length === 0 ? (
+        <Text c="dimmed" size="sm">
+          No trips match your filters. Try different origin or destination, or check back later.
+        </Text>
       ) : (
         rows.map((t: Trip) => (
           <Paper key={t._id} p="md" withBorder>
@@ -747,7 +975,7 @@ export function RequesterBrowseTripsPage() {
                   Departs {new Date(t.departureDate).toLocaleDateString()}
                 </Text>
               </div>
-              <Button size="xs" onClick={() => setModal({ trip: t })}>
+              <Button size="xs" onClick={() => void openMatchModal(t)}>
                 Send request
               </Button>
             </Group>
@@ -757,16 +985,40 @@ export function RequesterBrowseTripsPage() {
 
       <Pagination value={page} onChange={setPage} total={totalPages} />
 
-      <Modal opened={!!modal} onClose={() => setModal(null)} title="Match to your request">
+      <Modal opened={!!modal} onClose={closeMatchModal} title="Match to your request">
         <Stack gap="sm">
-          <Select
-            label="Your pending request"
-            data={pendingRequests.map((r) => ({ value: r._id, label: r.itemName }))}
-            value={pickReq}
-            onChange={(v) => setPickReq(v ?? '')}
+          {pendingLoading ? (
+            <Skeleton height={36} />
+          ) : pendingRequests.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              You have no pending requests.{' '}
+              <Anchor component={Link} to="/app/requester/delivery/new">
+                Post a request first.
+              </Anchor>
+            </Text>
+          ) : (
+            <Select
+              label="Your pending request"
+              placeholder="Select a request"
+              data={requestOptions}
+              value={selectedRequestId}
+              onChange={(val) => setSelectedRequestId(val ?? '')}
+              required
+            />
+          )}
+          <NumberInput
+            label="Offered fee"
+            min={1}
+            value={offeredFee}
+            onChange={(v) => setOfferedFee(Number(v) || 0)}
           />
-          <NumberInput label="Offered fee" value={fee} onChange={(v) => setFee(Number(v) || 0)} />
-          <Button onClick={() => void match()}>Confirm match</Button>
+          <Button
+            loading={matchLoading}
+            disabled={pendingLoading || pendingRequests.length === 0}
+            onClick={() => void handleConfirmMatch()}
+          >
+            Confirm match
+          </Button>
         </Stack>
       </Modal>
 

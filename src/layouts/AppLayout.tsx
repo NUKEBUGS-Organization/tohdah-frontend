@@ -1,5 +1,4 @@
 import {
-  Accordion,
   Anchor,
   AppShell,
   Avatar,
@@ -18,6 +17,7 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconBell,
+  IconCalendar,
   IconClipboardList,
   IconLayoutDashboard,
   IconMessage,
@@ -28,67 +28,43 @@ import {
   IconWallet,
   IconWifi,
 } from '@tabler/icons-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { Outlet, Link as RouterLink, useLocation } from 'react-router-dom';
 import { notificationsService } from '../api/services/notifications.service';
-import { APP_SCREEN_CATALOG, groupCatalogBySection } from '../app/catalog';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { resolveUserId } from '../utils/screen-data';
 import { colors } from '../theme';
-
-const grouped = groupCatalogBySection(APP_SCREEN_CATALOG);
-
-function sectionTitle(key: string) {
-  const labels: Record<string, string> = {
-    traveler: 'Traveler',
-    requester: 'Requester',
-    booking: 'Booking',
-    bookings: 'Bookings',
-    checkout: 'Checkout',
-    wallet: 'Wallet & payouts',
-    tracking: 'Tracking',
-    chat: 'Messages',
-    settings: 'Settings',
-    notifications: 'Notifications',
-    profile: 'Profile',
-    reviews: 'Reviews',
-    'trust-score': 'Trust',
-  };
-  return labels[key] ?? key;
-}
 
 export function AppLayout() {
   const [opened, { toggle }] = useDisclosure();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const userId = resolveUserId(user);
+  const queryClient = useQueryClient();
   const { socket, isConnected } = useSocket();
-  const [unreadCount, setUnreadCount] = useState(0);
 
-  const fetchUnreadCount = useCallback(async () => {
-    try {
-      const data = await notificationsService.getAll({ isRead: false, limit: 1 });
-      if (data) setUnreadCount(data.unreadCount ?? 0);
-    } catch {
-      setUnreadCount(0);
-    }
-  }, []);
+  const { data: notifPreview } = useQuery({
+    queryKey: ['notifications', 'unread-preview', userId],
+    queryFn: () => notificationsService.getAll({ isRead: false, limit: 1 }),
+    enabled: !!userId,
+  });
 
-  useEffect(() => {
-    void fetchUnreadCount();
-  }, [fetchUnreadCount]);
+  const unreadCount = notifPreview?.unreadCount ?? 0;
 
   useEffect(() => {
     if (!socket) return;
 
     const handleNewNotification = () => {
-      setUnreadCount((prev) => prev + 1);
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
     };
 
     socket.on('notification:new', handleNewNotification);
     return () => {
       socket.off('notification:new', handleNewNotification);
     };
-  }, [socket]);
+  }, [socket, queryClient]);
 
   const initials =
     user?.fullName
@@ -117,6 +93,14 @@ export function AppLayout() {
         label="My Trips"
         leftSection={<IconPlaneDeparture size={18} stroke={1.5} />}
         active={location.pathname.startsWith('/app/traveler/trips')}
+        style={{ borderRadius: 8 }}
+      />
+      <NavLink
+        component={RouterLink}
+        to="/app/bookings"
+        label="My Bookings"
+        leftSection={<IconCalendar size={18} stroke={1.5} />}
+        active={location.pathname.startsWith('/app/bookings')}
         style={{ borderRadius: 8 }}
       />
       <NavLink
@@ -169,6 +153,14 @@ export function AppLayout() {
       />
       <NavLink
         component={RouterLink}
+        to="/app/bookings"
+        label="My Bookings"
+        leftSection={<IconCalendar size={18} stroke={1.5} />}
+        active={location.pathname.startsWith('/app/bookings')}
+        style={{ borderRadius: 8 }}
+      />
+      <NavLink
+        component={RouterLink}
         to="/app/chat"
         label="Messages"
         leftSection={<IconMessage size={18} stroke={1.5} />}
@@ -193,35 +185,6 @@ export function AppLayout() {
       />
     </>
   );
-
-  const mainLinks = (
-    <>
-      {travelerLinks}
-      {requesterLinks}
-    </>
-  );
-
-  const catalogNav = [...grouped.entries()].map(([section, items]) => (
-    <Accordion.Item key={section} value={section}>
-      <Accordion.Control>{sectionTitle(section)}</Accordion.Control>
-      <Accordion.Panel>
-        {items.map((item) => {
-          const to = `/app/${item.path}`;
-          return (
-            <NavLink
-              key={item.path}
-              component={RouterLink}
-              to={to}
-              label={item.title}
-              active={location.pathname === to}
-              pl="md"
-              style={{ borderRadius: 8 }}
-            />
-          );
-        })}
-      </Accordion.Panel>
-    </Accordion.Item>
-  ));
 
   return (
     <AppShell
@@ -297,13 +260,8 @@ export function AppLayout() {
           <Text size="xs" fw={700} c={colors.subtleText} tt="uppercase" mb="sm">
             Shortcuts
           </Text>
-          {mainLinks}
-          <Text size="xs" fw={700} c={colors.subtleText} tt="uppercase" mt="lg" mb="sm">
-            All screens (Figma map)
-          </Text>
-          <Accordion multiple defaultValue={[...grouped.keys()]}>
-            {catalogNav}
-          </Accordion>
+          {travelerLinks}
+          {requesterLinks}
         </ScrollArea>
       </AppShell.Navbar>
 

@@ -7,4 +7,5 @@ export * from './notifications.service';
 export * from './reviews.service';
 export * from './trust.service';
 export * from './users.service';
+export * from './payments.service';
 export * from './admin.service';

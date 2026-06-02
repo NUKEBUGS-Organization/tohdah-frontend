@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiRequestError } from '../api/client';
 
 export function useApi<T>(
@@ -14,8 +14,15 @@ export function useApi<T>(
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const fetcherRef = useRef(fetcher);
+
+  fetcherRef.current = fetcher;
 
   const refetch = useCallback(() => setTick((t) => t + 1), []);
+
+  useEffect(() => {
+    setTick((t) => t + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,7 +30,7 @@ export function useApi<T>(
     setError(null);
     void (async () => {
       try {
-        const result = await fetcher();
+        const result = await fetcherRef.current();
         if (!cancelled) setData(result);
       } catch (e) {
         if (!cancelled) {

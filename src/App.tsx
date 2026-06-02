@@ -1,5 +1,7 @@
+import { Center, Loader, Stack, Text } from '@mantine/core';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AdminRoute, GuestRoute, ProtectedRoute } from './components/ProtectedRoute';
+import { useAuth } from './context/AuthContext';
 import { AppLayout } from './layouts/AppLayout';
 import { CatalogRoute } from './pages/app/CatalogRoute';
 import { RequesterDashboardPage } from './pages/app/RequesterDashboardPage';
@@ -29,6 +31,26 @@ import { AdminSupportModerationPage } from './pages/admin/AdminSupportModeration
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 
 export default function App() {
+  const { isRestoring } = useAuth();
+
+  if (isRestoring) {
+    return (
+      <Center h="100vh" style={{ background: '#1E2A4A' }}>
+        <Stack align="center" gap="md">
+          <Text
+            fw={800}
+            size="xl"
+            variant="gradient"
+            gradient={{ from: '#00C9A7', to: '#2D86FF', deg: 90 }}
+          >
+            Tohdah
+          </Text>
+          <Loader color="teal" size="md" />
+        </Stack>
+      </Center>
+    );
+  }
+
   return (
     <Routes>
       <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />

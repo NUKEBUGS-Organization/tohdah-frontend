@@ -5,12 +5,12 @@ import { useAuth } from '../context/AuthContext';
 
 /** Public marketing/auth pages — redirect to app if already signed in. */
 export function GuestRoute() {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isRestoring, isAuthenticated } = useAuth();
 
-  if (isLoading) {
+  if (isLoading || isRestoring) {
     return (
       <Center mih="60vh">
-        <Loader size="lg" />
+        <Loader color="teal" size="md" />
       </Center>
     );
   }
@@ -23,12 +23,12 @@ export function GuestRoute() {
 }
 
 export function ProtectedRoute() {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isRestoring, isAuthenticated } = useAuth();
 
-  if (isLoading) {
+  if (isLoading || isRestoring) {
     return (
-      <Center mih="60vh">
-        <Loader size="lg" />
+      <Center h="100vh">
+        <Loader color="teal" size="md" />
       </Center>
     );
   }
@@ -41,12 +41,12 @@ export function ProtectedRoute() {
 }
 
 export function AdminRoute() {
-  const { isLoading, isAuthenticated, user } = useAuth();
+  const { isLoading, isRestoring, isAuthenticated, user } = useAuth();
 
-  if (isLoading) {
+  if (isLoading || isRestoring) {
     return (
-      <Center mih="60vh">
-        <Loader size="lg" />
+      <Center h="100vh">
+        <Loader color="teal" size="md" />
       </Center>
     );
   }
@@ -65,11 +65,11 @@ export function AdminRoute() {
 
 /** Wrap a single element when you cannot use `<Outlet />` */
 export function ProtectedShell({ children }: { children: ReactNode }) {
-  const { isLoading, isAuthenticated } = useAuth();
-  if (isLoading) {
+  const { isLoading, isRestoring, isAuthenticated } = useAuth();
+  if (isLoading || isRestoring) {
     return (
-      <Center mih="60vh">
-        <Loader size="lg" />
+      <Center h="100vh">
+        <Loader color="teal" size="md" />
       </Center>
     );
   }

@@ -2,7 +2,9 @@ import {
   Avatar,
   Badge,
   Button,
+  FileInput,
   Group,
+  Modal,
   NumberInput,
   Paper,
   ScrollArea,
@@ -16,12 +18,15 @@ import {
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { IconSend } from '@tabler/icons-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Booking, Message, Notification } from '../../../api/types';
-import { api } from '../../../api/client';
+import { api, ApiRequestError } from '../../../api/client';
+import { bookingTimelineSteps } from '../../../api/booking-utils';
+import { extractName, isSameId, toId } from '../../../api/id-utils';
 import { bookingsService } from '../../../api/services/bookings.service';
-import { chatService, type ConversationSummary } from '../../../api/services/chat.service';
+import { chatService } from '../../../api/services/chat.service';
 import { notificationsService } from '../../../api/services/notifications.service';
 import { reviewsService } from '../../../api/services/reviews.service';
 import { trustService } from '../../../api/services/trust.service';
@@ -30,6 +35,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useSocket } from '../../../context/SocketContext';
 import { useApi } from '../../../hooks/useApi';
 import { notify } from '../../../utils/notify';
+import { FRIENDLY_LOAD_ERROR, resolveUserId } from '../../../utils/screen-data';
 
 function messageBookingId(message: Message): string {
   const bid = message.bookingId;
@@ -45,48 +51,36 @@ function bidFromLoc(loc: ReturnType<typeof useLocation>, sp: URLSearchParams): s
   return sp.get('bookingId');
 }
 
-function timelineProgress(status: Booking['status']): number {
-  const m: Partial<Record<Booking['status'], number>> = {
-    pending_acceptance: 15,
-    countered: 25,
-    confirmed: 35,
-    paid: 50,
-    in_transit: 70,
-    delivered: 85,
-    completed: 100,
-    cancelled: 0,
-    disputed: 40,
-  };
-  return m[status] ?? 10;
-}
-
 export function TrackingLivePage() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [sp] = useSearchParams();
-  const id = bidFromLoc(location, sp);
+  const bookingId = bidFromLoc(location, sp);
+  const { user } = useAuth();
+  const userId = resolveUserId(user);
   const { socket } = useSocket();
-  const [booking, setBooking] = useState<Booking | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [disputeModalOpen, setDisputeModalOpen] = useState(false);
+  const [disputeReason, setDisputeReason] = useState('');
 
-  const fetchBooking = useCallback(async () => {
-    if (!id) return;
-    try {
-      const b = await bookingsService.getById(id);
-      setBooking(b);
-    } catch {
-      setBooking(null);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    void fetchBooking();
-  }, [fetchBooking]);
+  const {
+    data: booking,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ['booking', bookingId],
+    queryFn: () => bookingsService.getById(bookingId!),
+    enabled: !!bookingId,
+  });
 
   useEffect(() => {
-    if (!socket || !id) return;
+    if (!socket || !bookingId) return;
 
     const handleBookingUpdate = (updatedBooking: Booking) => {
-      if (updatedBooking._id === id) {
-        setBooking(updatedBooking);
+      if (String(updatedBooking._id) === bookingId) {
+        void queryClient.invalidateQueries({ queryKey: ['booking', bookingId] });
+        void queryClient.invalidateQueries({ queryKey: ['bookings'] });
       }
     };
 
@@ -94,23 +88,201 @@ export function TrackingLivePage() {
     return () => {
       socket.off('booking:updated', handleBookingUpdate);
     };
-  }, [socket, id]);
+  }, [socket, bookingId, queryClient]);
 
-  if (!id) return <Text>Missing booking id.</Text>;
-  if (!booking) return <Skeleton height={160} />;
+  const handleMarkInTransit = async () => {
+    if (!bookingId) return;
+    setActionLoading(true);
+    try {
+      await bookingsService.markInTransit(bookingId);
+      notify.success('Marked as in transit!');
+      await queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      await refetch();
+    } catch (err) {
+      notify.error(
+        err instanceof ApiRequestError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Failed to update status',
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleComplete = async () => {
+    if (!bookingId) return;
+    setActionLoading(true);
+    try {
+      await bookingsService.complete(bookingId);
+      notify.success('Delivery confirmed!');
+      await queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      navigate(`/app/reviews/new?bookingId=${encodeURIComponent(bookingId)}`);
+    } catch (err) {
+      notify.error(
+        err instanceof ApiRequestError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Failed to confirm delivery',
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDispute = async () => {
+    if (!bookingId || !disputeReason.trim()) {
+      notify.error('Please describe the issue');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await bookingsService.dispute(bookingId, disputeReason.trim());
+      notify.success('Dispute raised — our team will review');
+      setDisputeModalOpen(false);
+      setDisputeReason('');
+      await queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      await refetch();
+    } catch (err) {
+      notify.error(
+        err instanceof ApiRequestError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Could not raise dispute',
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (!bookingId) {
+    return (
+      <Stack gap="md">
+        <Title order={2}>Live tracking</Title>
+        <Text c="dimmed">Missing booking id. Open tracking from My Bookings.</Text>
+        <Button component={Link} to="/app/bookings" variant="light">
+          My bookings
+        </Button>
+      </Stack>
+    );
+  }
+
+  if (isLoading) return <Skeleton height={160} />;
+
+  if (!booking) {
+    return (
+      <Stack gap="md">
+        <Title order={2}>Live tracking</Title>
+        <Text c="dimmed">{FRIENDLY_LOAD_ERROR}</Text>
+        <Button variant="light" onClick={() => void refetch()}>
+          Retry
+        </Button>
+      </Stack>
+    );
+  }
+
+  const isTraveler = isSameId(booking.travelerId, userId);
+  const isRequester = isSameId(booking.requesterId, userId);
+  const steps = bookingTimelineSteps(booking);
+  const timelineActive = Math.max(0, steps.filter((s) => s.done).length - 1);
+  const actionableStatuses = ['paid', 'in_transit', 'delivered'] as const;
 
   return (
-    <Stack gap="md">
+    <Stack gap="md" pb={48}>
       <Title order={2}>Live tracking</Title>
-      <Badge>{booking.status}</Badge>
+      <Badge size="lg">{booking.status.replace(/_/g, ' ')}</Badge>
       <Text fz={14}>Ref {booking.bookingRef}</Text>
-      <Timeline active={Math.floor(timelineProgress(booking.status) / 20)} bulletSize={22}>
-        <Timeline.Item title="Matched / pending" />
-        <Timeline.Item title="Confirmed & paid" />
-        <Timeline.Item title="In transit" />
-        <Timeline.Item title="Delivered" />
-        <Timeline.Item title="Completed" />
+      <Timeline active={timelineActive} bulletSize={22} lineWidth={2}>
+        {steps.map((s) => (
+          <Timeline.Item
+            key={s.label}
+            title={s.label}
+            color={s.done ? 'teal' : 'gray'}
+          />
+        ))}
       </Timeline>
+
+      {isTraveler && booking.status === 'paid' ? (
+        <Button
+          color="teal"
+          size="md"
+          fullWidth
+          mt="xl"
+          loading={actionLoading}
+          onClick={() => void handleMarkInTransit()}
+        >
+          Mark as in transit
+        </Button>
+      ) : null}
+
+      {isTraveler && booking.status === 'in_transit' ? (
+        <Button
+          color="teal"
+          size="md"
+          fullWidth
+          mt="xl"
+          onClick={() =>
+            navigate(`/app/tracking/pod?bookingId=${encodeURIComponent(bookingId)}`)
+          }
+        >
+          Submit proof of delivery
+        </Button>
+      ) : null}
+
+      {isRequester && booking.status === 'delivered' ? (
+        <Button
+          color="green"
+          size="md"
+          fullWidth
+          mt="xl"
+          loading={actionLoading}
+          onClick={() => void handleComplete()}
+        >
+          Confirm delivery
+        </Button>
+      ) : null}
+
+      {actionableStatuses.includes(booking.status as (typeof actionableStatuses)[number]) ? (
+        <Button
+          variant="subtle"
+          color="red"
+          size="sm"
+          mt="md"
+          onClick={() => setDisputeModalOpen(true)}
+        >
+          Raise a dispute
+        </Button>
+      ) : null}
+
+      <Modal
+        opened={disputeModalOpen}
+        onClose={() => setDisputeModalOpen(false)}
+        title="Raise a dispute"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Describe what went wrong. Our team will review and contact both parties.
+          </Text>
+          <Textarea
+            label="Reason"
+            minRows={3}
+            value={disputeReason}
+            onChange={(e) => setDisputeReason(e.currentTarget.value)}
+            placeholder="Item damaged, not delivered, etc."
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setDisputeModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button color="red" loading={actionLoading} onClick={() => void handleDispute()}>
+              Submit dispute
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
@@ -169,111 +341,183 @@ export function TrackingHomePage() {
 
 export function ProofOfDeliveryPage() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [sp] = useSearchParams();
-  const id = bidFromLoc(location, sp);
+  const bookingId = bidFromLoc(location, sp);
   const [file, setFile] = useState<File | null>(null);
   const [code, setCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const { data: booking, isLoading } = useQuery({
+    queryKey: ['booking', bookingId],
+    queryFn: () => bookingsService.getById(bookingId!),
+    enabled: !!bookingId,
+  });
+
+  const requesterName = booking ? extractName(booking.requesterId) : 'the requester';
+  const podHint = booking?.podConfirmationCode
+    ? `Get the 6-digit code from the requester (${requesterName}'s POD code: ${booking.podConfirmationCode})`
+    : `Get the 6-digit confirmation code from ${requesterName} before submitting.`;
 
   const submit = async () => {
-    if (!id || !file || !code.trim()) {
+    if (!bookingId || !file || !code.trim()) {
       notify.error('Photo and confirmation code required');
       return;
     }
+    setSubmitting(true);
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const up = await api.upload<{ url: string }>(`/upload/delivery/${id}`, fd);
+      const up = await api.upload<{ url: string }>(`/upload/delivery/${bookingId}`, fd);
       if (!up?.url) throw new Error('Upload failed');
-      await bookingsService.submitPod(id, { podPhotoUrl: up.url, podConfirmationCode: code.trim() });
+      await bookingsService.submitPod(bookingId, {
+        podPhotoUrl: up.url,
+        podConfirmationCode: code.trim(),
+      });
       notify.success('Proof submitted');
+      await queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      await queryClient.invalidateQueries({ queryKey: ['booking', bookingId] });
+      navigate(`/app/tracking/live?bookingId=${encodeURIComponent(bookingId)}`);
     } catch (e) {
-      notify.error(e instanceof Error ? e.message : 'Submit failed');
+      notify.error(
+        e instanceof ApiRequestError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Submit failed',
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  if (!bookingId) {
+    return (
+      <Stack maw={480} gap="md">
+        <Title order={2}>Proof of delivery</Title>
+        <Text c="dimmed">Missing booking id.</Text>
+        <Button component={Link} to="/app/bookings" variant="light">
+          My bookings
+        </Button>
+      </Stack>
+    );
+  }
+
+  if (isLoading) return <Skeleton height={200} maw={480} />;
+
   return (
-    <Stack maw={480}>
+    <Stack maw={480} gap="md">
       <Title order={2}>Proof of delivery</Title>
-      <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-      <TextInput label="Confirmation code" value={code} onChange={(e) => setCode(e.currentTarget.value)} />
-      <Button onClick={() => void submit()}>Submit</Button>
+      {booking ? (
+        <Text size="sm" c="dimmed">
+          Booking {booking.bookingRef}
+        </Text>
+      ) : null}
+      <FileInput
+        label="Delivery photo"
+        placeholder="Upload a photo of the delivered item"
+        accept="image/*"
+        value={file}
+        onChange={setFile}
+      />
+      <TextInput
+        label="Confirmation code"
+        description={podHint}
+        value={code}
+        onChange={(e) => setCode(e.currentTarget.value)}
+        placeholder="6-digit POD code"
+        maxLength={6}
+      />
+      <Button loading={submitting} onClick={() => void submit()}>
+        Submit proof of delivery
+      </Button>
     </Stack>
   );
 }
 
 export function ChatInboxPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const userId = resolveUserId(user);
   const { socket } = useSocket();
-  const [items, setItems] = useState<ConversationSummary[]>([]);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const rows = await chatService.getInbox();
-        setItems(rows);
-      } catch {
-        setItems([]);
-      }
-    };
-    void load();
-  }, []);
+  const {
+    data: items,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ['chat', 'inbox', userId],
+    queryFn: () => chatService.getInbox(),
+    enabled: !!userId,
+  });
+
+  const conversations = items ?? [];
 
   useEffect(() => {
     if (!socket) return;
 
-    const handleNewMessage = (message: Message) => {
-      const bookingId = messageBookingId(message);
-      setItems((prev) => {
-        const existing = prev.find((c) => c.bookingId === bookingId);
-        if (existing) {
-          return prev.map((c) =>
-            c.bookingId === bookingId
-              ? {
-                  ...c,
-                  lastMessage: message,
-                  unreadCount: c.unreadCount + 1,
-                }
-              : c,
-          );
-        }
-        void chatService.getInbox().then(setItems);
-        return prev;
-      });
+    const handleNewMessage = () => {
+      void queryClient.invalidateQueries({ queryKey: ['chat', 'inbox'] });
     };
 
     socket.on('chat:message', handleNewMessage);
     return () => {
       socket.off('chat:message', handleNewMessage);
     };
-  }, [socket]);
+  }, [socket, queryClient]);
 
   return (
-    <Stack>
+    <Stack gap="md" pb={48}>
       <Title order={2}>Messages</Title>
-      {items.map((c) => (
-        <Paper
-          key={c.bookingId}
-          p="md"
-          withBorder
-          style={{ cursor: 'pointer' }}
-          onClick={() => navigate('/app/chat/thread', { state: { bookingId: c.bookingId } })}
-        >
-          <Group justify="space-between">
-            <div>
-              <Text fw={700}>{c.bookingRef ?? c.bookingId}</Text>
-              <Text fz={13} lineClamp={1}>
-                {c.lastMessage.content}
-              </Text>
-            </div>
-            {c.unreadCount > 0 ? <Badge>{c.unreadCount}</Badge> : null}
-          </Group>
+      {isLoading ? (
+        <Stack gap="sm">
+          <Skeleton height={72} />
+          <Skeleton height={72} />
+          <Skeleton height={72} />
+        </Stack>
+      ) : error ? (
+        <Text c="dimmed" size="sm">
+          {FRIENDLY_LOAD_ERROR}
+        </Text>
+      ) : conversations.length === 0 ? (
+        <Paper p="lg" withBorder radius="md">
+          <Text fw={600}>No conversations yet</Text>
+          <Text size="sm" c="dimmed" mt={6}>
+            Accept a booking to start messaging with senders and travelers.
+          </Text>
+          <Button component={Link} to="/app/traveler" variant="light" mt="md">
+            Go to dashboard
+          </Button>
         </Paper>
-      ))}
+      ) : (
+        conversations.map((c) => (
+          <Paper
+            key={c.bookingId}
+            p="md"
+            withBorder
+            style={{ cursor: 'pointer' }}
+            onClick={() => navigate('/app/chat/thread', { state: { bookingId: c.bookingId } })}
+          >
+            <Group justify="space-between">
+              <div>
+                <Text fw={700}>{c.bookingRef ?? c.bookingId}</Text>
+                <Text fz={13} lineClamp={1}>
+                  {c.lastMessage?.content ?? 'No messages yet'}
+                </Text>
+              </div>
+              {c.unreadCount > 0 ? <Badge>{c.unreadCount}</Badge> : null}
+            </Group>
+          </Paper>
+        ))
+      )}
     </Stack>
   );
 }
 
 export function ChatThreadPage() {
+  const navigate = useNavigate();
   const location = useLocation();
   const [sp] = useSearchParams();
   const { user } = useAuth();
@@ -286,20 +530,30 @@ export function ChatThreadPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [content, setContent] = useState('');
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [messagesLoading, setMessagesLoading] = useState(true);
+  const [messagesError, setMessagesError] = useState(false);
 
-  const currentUserId = user?.id ?? '';
+  const currentUserId = resolveUserId(user);
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setMessagesLoading(false);
+      return;
+    }
+    setMessagesLoading(true);
+    setMessagesError(false);
     const load = async () => {
       try {
         const res = await chatService.getMessages(id, { limit: 100 });
         setMessages(res?.data ?? []);
       } catch {
-        /* ignore */
+        setMessages([]);
+        setMessagesError(true);
+      } finally {
+        setMessagesLoading(false);
       }
     };
     void load();
@@ -409,7 +663,24 @@ export function ChatThreadPage() {
     }
   };
 
-  if (!id) return <Text>Missing conversation.</Text>;
+  if (!id) {
+    return (
+      <Stack gap="sm">
+        <Title order={3}>Booking chat</Title>
+        <Text c="dimmed" size="sm">
+          No booking selected. Go to My Bookings to open a chat.
+        </Text>
+        <Group gap="sm">
+          <Button onClick={() => navigate('/app/bookings')} variant="light">
+            My Bookings
+          </Button>
+          <Button component={Link} to="/app/chat" variant="subtle">
+            Messages inbox
+          </Button>
+        </Group>
+      </Stack>
+    );
+  }
 
   return (
     <Stack h="70vh">
@@ -421,6 +692,21 @@ export function ChatThreadPage() {
       ) : null}
       <ScrollArea flex={1}>
         <Stack gap="xs">
+          {messagesLoading ? (
+            <>
+              <Skeleton height={56} />
+              <Skeleton height={56} />
+              <Skeleton height={56} />
+            </>
+          ) : messagesError ? (
+            <Text c="dimmed" size="sm">
+              {FRIENDLY_LOAD_ERROR}
+            </Text>
+          ) : messages.length === 0 ? (
+            <Text c="dimmed" size="sm">
+              No messages yet. Say hello to start the conversation.
+            </Text>
+          ) : null}
           {messages.map((m) => {
             const sender =
               typeof m.senderId === 'object' && m.senderId && 'fullName' in m.senderId
@@ -473,45 +759,42 @@ export function NotificationPrefsPage() {
 }
 
 export function NotificationsCenterPage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const userId = resolveUserId(user);
   const { socket } = useSocket();
-  const [items, setItems] = useState<(Notification & { createdAt: string })[]>([]);
 
-  const load = useCallback(async () => {
-    try {
-      const res = await notificationsService.getAll({ limit: 50 });
-      setItems((res?.data ?? []) as (Notification & { createdAt: string })[]);
-    } catch {
-      setItems([]);
-    }
-  }, []);
+  const {
+    data: notifPage,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['notifications', userId],
+    queryFn: () => notificationsService.getAll({ limit: 50 }),
+    enabled: !!userId,
+  });
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const items = (notifPage?.data ?? []) as (Notification & { createdAt: string })[];
 
   useEffect(() => {
     if (!socket) return;
 
-    const handleNew = (notification: Notification & { createdAt?: string }) => {
-      setItems((prev) => [
-        {
-          ...notification,
-          createdAt: notification.createdAt ?? new Date().toISOString(),
-        } as Notification & { createdAt: string },
-        ...prev,
-      ]);
+    const handleNew = () => {
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
     };
 
     socket.on('notification:new', handleNew);
     return () => {
       socket.off('notification:new', handleNew);
     };
-  }, [socket]);
+  }, [socket, queryClient]);
 
   const markRead = async (nid: string) => {
     try {
       await notificationsService.markRead(nid);
-      void load();
+      void refetch();
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
     } catch {
       /* ignore */
     }
@@ -521,20 +804,36 @@ export function NotificationsCenterPage() {
     try {
       await notificationsService.markAllRead();
       notify.success('All marked read');
-      void load();
+      void refetch();
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
     } catch {
       /* ignore */
     }
   };
 
   return (
-    <Stack>
+    <Stack gap="md" pb={48}>
       <Group justify="space-between">
         <Title order={2}>Notifications</Title>
         <Button variant="light" onClick={() => void markAll()}>
           Mark all read
         </Button>
       </Group>
+      {isLoading ? (
+        <Stack gap="sm">
+          <Skeleton height={64} />
+          <Skeleton height={64} />
+          <Skeleton height={64} />
+        </Stack>
+      ) : error ? (
+        <Text c="dimmed" size="sm">
+          {FRIENDLY_LOAD_ERROR}
+        </Text>
+      ) : items.length === 0 ? (
+        <Text c="dimmed" size="sm">
+          No notifications yet. Activity on your trips and requests will appear here.
+        </Text>
+      ) : (
       <Stack gap="xs">
         {items.map((n) => (
           <Paper
@@ -552,6 +851,7 @@ export function NotificationsCenterPage() {
           </Paper>
         ))}
       </Stack>
+      )}
     </Stack>
   );
 }
@@ -578,18 +878,36 @@ export function ChampionBadgePage() {
 export function ReviewSubmissionPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [sp] = useSearchParams();
   const st = location.state as { bookingId?: string; revieweeId?: string } | null;
+  const bookingId = st?.bookingId ?? sp.get('bookingId');
+  const { user } = useAuth();
+  const userId = resolveUserId(user);
+
+  const { data: booking } = useQuery({
+    queryKey: ['booking', bookingId],
+    queryFn: () => bookingsService.getById(bookingId!),
+    enabled: !!bookingId,
+  });
+
+  const revieweeId =
+    st?.revieweeId ??
+    (booking && userId
+      ? isSameId(booking.travelerId, userId)
+        ? toId(booking.requesterId)
+        : toId(booking.travelerId)
+      : '');
 
   const form = useForm({
     initialValues: { overall: 5, comment: '' },
   });
 
   const submit = async () => {
-    if (!st?.bookingId || !st.revieweeId) return;
+    if (!bookingId || !revieweeId) return;
     try {
       await reviewsService.create({
-        bookingId: st.bookingId,
-        revieweeId: st.revieweeId,
+        bookingId,
+        revieweeId,
         overallRating: form.values.overall,
         comment: form.values.comment.trim() || undefined,
       });
@@ -616,15 +934,42 @@ export function PublicProfilePage() {
   const uid =
     (location.state as { userId?: string } | null)?.userId ?? sp.get('userId') ?? '';
 
-  const { data: profile } = useApi(() => (uid ? usersService.getProfile(uid) : Promise.resolve(null)), [uid]);
-  const { data: reviews } = useApi(() => (uid ? reviewsService.getForUser(uid, { limit: 10 }) : Promise.resolve(null)), [uid]);
-  const { data: badges } = useApi(() => (uid ? trustService.getBadges(uid) : Promise.resolve([])), [uid]);
+  const { data: profile, isLoading: profileLoading, error: profileError } = useApi(
+    () => (uid ? usersService.getProfile(uid) : Promise.resolve(null)),
+    [uid],
+  );
+  const { data: reviews, isLoading: reviewsLoading } = useApi(
+    () => (uid ? reviewsService.getForUser(uid, { limit: 10 }) : Promise.resolve(null)),
+    [uid],
+  );
+  const { data: badges, isLoading: badgesLoading } = useApi(
+    () => (uid ? trustService.getBadges(uid) : Promise.resolve([])),
+    [uid],
+  );
 
   if (!uid) return <Text>Missing user id.</Text>;
 
+  if (profileLoading) {
+    return (
+      <Stack gap="sm">
+        <Skeleton height={32} />
+        <Skeleton height={80} />
+        <Skeleton height={120} />
+      </Stack>
+    );
+  }
+
+  if (profileError || !profile) {
+    return (
+      <Text c="dimmed" size="sm">
+        {FRIENDLY_LOAD_ERROR}
+      </Text>
+    );
+  }
+
   return (
     <Stack>
-      <Title order={2}>{profile?.fullName ?? 'Profile'}</Title>
+      <Title order={2}>{profile.fullName ?? 'Profile'}</Title>
       <Text fz={14}>{profile?.bio}</Text>
       <Group>
         <Badge>{profile?.rating}</Badge>
@@ -633,6 +978,12 @@ export function PublicProfilePage() {
       <Title order={4} mt="md">
         Reviews
       </Title>
+      {reviewsLoading ? <Skeleton height={60} /> : null}
+      {(reviews?.data ?? []).length === 0 && !reviewsLoading ? (
+        <Text c="dimmed" size="sm">
+          No reviews yet.
+        </Text>
+      ) : null}
       {(reviews?.data ?? []).map((r) => (
         <Paper key={r._id} p="sm" withBorder>
           <Text fz={14}>{r.comment ?? '—'}</Text>
@@ -641,6 +992,7 @@ export function PublicProfilePage() {
       <Title order={4} mt="md">
         Badges
       </Title>
+      {badgesLoading ? <Skeleton height={32} /> : null}
       <Group>
         {(badges ?? []).map((b) => (
           <Badge key={b.badge} color={b.earned ? 'teal' : 'gray'}>
@@ -653,7 +1005,13 @@ export function PublicProfilePage() {
 }
 
 export function TrustScorePage() {
-  const { data: score, refetch } = useApi(() => trustService.getMyScore(), []);
+  const { user } = useAuth();
+  const userId = resolveUserId(user);
+
+  const { data: score, isLoading, error, refetch } = useApi(
+    () => (userId ? trustService.getMyScore() : Promise.resolve(null)),
+    [userId],
+  );
 
   const verify = async (field: 'email' | 'phone' | 'id' | 'selfie') => {
     try {
@@ -668,7 +1026,16 @@ export function TrustScorePage() {
   return (
     <Stack>
       <Title order={2}>Trust score</Title>
-      {score ? (
+      {isLoading ? (
+        <Stack gap="sm">
+          <Skeleton height={48} />
+          <Skeleton height={80} />
+        </Stack>
+      ) : error ? (
+        <Text c="dimmed" size="sm">
+          {FRIENDLY_LOAD_ERROR}
+        </Text>
+      ) : score ? (
         <>
           <Text fz={36} fw={800}>
             {score.score}
@@ -683,7 +1050,9 @@ export function TrustScorePage() {
           </Stack>
         </>
       ) : (
-        <Skeleton height={80} />
+        <Text c="dimmed" size="sm">
+          Trust score is not available yet.
+        </Text>
       )}
       <Group>
         <Button size="xs" onClick={() => void verify('email')}>

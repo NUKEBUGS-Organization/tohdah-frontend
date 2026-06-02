@@ -1,4 +1,4 @@
-import { api } from '../client';
+import { api, ApiRequestError } from '../client';
 import { buildQuery } from '../utils';
 import type { DeliveryRequest, PaginatedResponse } from '../types';
 
@@ -64,10 +64,21 @@ export const requestsService = {
     const q: Record<string, unknown> = {};
     if (params?.status) q.status = params.status;
     if (params?.type) q.type = params.type;
-    const raw = await api.get<DeliveryRequest[]>(
+    const raw = await api.get<DeliveryRequest[] | PaginatedResponse<DeliveryRequest>>(
       `/requests/my${buildQuery(q)}`,
     );
-    const list = Array.isArray(raw) ? raw : [];
+    if (raw == null) {
+      throw new ApiRequestError(
+        401,
+        'Could not load requests. Sign in again or refresh the page.',
+        'Unauthorized',
+      );
+    }
+    const list = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.data)
+        ? raw.data
+        : [];
     const page = params?.page ?? 1;
     const limit = Math.max(1, params?.limit ?? 10);
     return asPaginatedRequests(list, page, limit);

@@ -14,12 +14,24 @@ import {
   Title,
 } from '@mantine/core';
 import { IconPackage, IconPlus, IconStar } from '@tabler/icons-react';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { requestsService } from '../../api/services/requests.service';
 import { tripsService } from '../../api/services/trips.service';
-import { useApi } from '../../hooks/useApi';
+import { paginatedRows } from '../../api/booking-utils';
+import { useAuth } from '../../context/AuthContext';
+import { resolveUserId } from '../../utils/screen-data';
 import { colors, requesterUi as RQ } from '../../theme';
 import type { DeliveryRequest, Trip, User } from '../../api/types';
+
+const ACTIVE_REQUEST_STATUSES = new Set([
+  'pending',
+  'matched',
+  'confirmed',
+  'in_transit',
+  'delivered',
+]);
 
 function displayName(u: string | Partial<User> | undefined): string {
   if (u && typeof u === 'object' && 'fullName' in u && typeof u.fullName === 'string') {
@@ -30,33 +42,33 @@ function displayName(u: string | Partial<User> | undefined): string {
 
 export function RequesterDashboardPage() {
   const navigate = useNavigate();
+  const { user, isAuthenticated, isRestoring } = useAuth();
+  const userId = resolveUserId(user);
+  const authReady = isAuthenticated && !isRestoring && !!userId;
 
-  const { data: pendingList, isLoading: lp } = useApi(
-    () => requestsService.getMy({ status: 'pending', limit: 200 }),
-    [],
-  );
-  const { data: transitList, isLoading: lt } = useApi(
-    () => requestsService.getMy({ status: 'in_transit', limit: 200 }),
-    [],
-  );
-  const { data: doneList, isLoading: ld } = useApi(
-    () => requestsService.getMy({ status: 'completed', limit: 200 }),
-    [],
-  );
-  const { data: myRequests, isLoading: lm } = useApi(
-    () => requestsService.getMy({ limit: 10 }),
-    [],
-  );
-  const { data: browseTrips, isLoading: lb } = useApi(
-    () => tripsService.browse({ limit: 3, page: 1 }),
-    [],
+  const { data: requestsData, isFetching: lm } = useQuery({
+    queryKey: ['requests', 'my', userId],
+    queryFn: () => requestsService.getMy({ limit: 100 }),
+    enabled: authReady,
+  });
+
+  const { data: browseTrips, isLoading: lb } = useQuery({
+    queryKey: ['trips', 'browse', 'dashboard-preview'],
+    queryFn: () => tripsService.browse({ limit: 3, page: 1 }),
+  });
+
+  const allRequests = paginatedRows(requestsData);
+
+  const activeRequests = useMemo(
+    () => allRequests.filter((r) => ACTIVE_REQUEST_STATUSES.has(r.status)),
+    [allRequests],
   );
 
-  const activeReqCount = pendingList?.total ?? 0;
-  const inTransitCount = transitList?.total ?? 0;
-  const completedCount = doneList?.total ?? 0;
+  const activeReqCount = activeRequests.length;
+  const inTransitCount = allRequests.filter((r) => r.status === 'in_transit').length;
+  const completedCount = allRequests.filter((r) => r.status === 'completed').length;
 
-  const requests = myRequests?.data ?? [];
+  const requests = activeRequests.slice(0, 5);
   const trips = browseTrips?.data ?? [];
 
   return (
@@ -86,7 +98,7 @@ export function RequesterDashboardPage() {
           <Text fz={12} tt="uppercase" fw={700} c={colors.subtleText}>
             Active requests
           </Text>
-          {lp ? (
+          {lm ? (
             <Skeleton h={28} mt={8} />
           ) : (
             <Text fz={28} fw={800}>
@@ -98,7 +110,7 @@ export function RequesterDashboardPage() {
           <Text fz={12} tt="uppercase" fw={700} c={colors.subtleText}>
             In transit
           </Text>
-          {lt ? (
+          {lm ? (
             <Skeleton h={28} mt={8} />
           ) : (
             <Text fz={28} fw={800}>
@@ -110,7 +122,7 @@ export function RequesterDashboardPage() {
           <Text fz={12} tt="uppercase" fw={700} c={colors.subtleText}>
             Completed
           </Text>
-          {ld ? (
+          {lm ? (
             <Skeleton h={28} mt={8} />
           ) : (
             <Text fz={28} fw={800}>
@@ -157,7 +169,11 @@ export function RequesterDashboardPage() {
                     </Text>
                     {traveler ? (
                       <Group gap="xs" mt="sm">
-                        <Avatar size={28} radius="xl" src={(traveler as Partial<User>).profilePhoto ?? undefined}>
+                        <Avatar
+                          size={28}
+                          radius="xl"
+                          src={(traveler as Partial<User>).profilePhoto ?? undefined}
+                        >
                           {name.charAt(0)}
                         </Avatar>
                         <Text fz={13}>{name}</Text>
@@ -171,7 +187,10 @@ export function RequesterDashboardPage() {
                       size="xs"
                       radius="md"
                       onClick={() =>
-                        navigate('/app/requester/requests/detail', { state: { requestId: r._id } })
+                        navigate(
+                          `/app/requester/requests/detail?requestId=${encodeURIComponent(r._id ?? '')}`,
+                          { state: { requestId: r._id } },
+                        )
                       }
                     >
                       View details
@@ -221,7 +240,16 @@ export function RequesterDashboardPage() {
                   style={{ cursor: 'default' }}
                 >
                   <Group align="flex-start" wrap="nowrap">
-                    <Avatar size={52} radius="xl" color="brandTeal" src={typeof tr === 'object' && tr && 'profilePhoto' in tr ? (tr.profilePhoto as string | null) ?? undefined : undefined}>
+                    <Avatar
+                      size={52}
+                      radius="xl"
+                      color="brandTeal"
+                      src={
+                        typeof tr === 'object' && tr && 'profilePhoto' in tr
+                          ? (tr.profilePhoto as string | null) ?? undefined
+                          : undefined
+                      }
+                    >
                       {initials}
                     </Avatar>
                     <div style={{ minWidth: 0 }}>

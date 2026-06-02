@@ -1,4 +1,4 @@
-import { api } from '../client';
+import { api, ApiRequestError } from '../client';
 import { buildQuery } from '../utils';
 import type { PaginatedResponse, Trip } from '../types';
 
@@ -51,20 +51,45 @@ export const tripsService = {
   create: (data: CreateTripData) => api.post<Trip>('/trips', data),
 
   /**
-   * Backend returns a plain array (no server pagination). Client slices when page/limit passed.
+   * GET /trips/my accepts only `status` (active | completed | cancelled).
+   * Backend returns a plain Trip[] or paginated { data, total, page, limit }.
+   * `page` / `limit` are applied client-side only — never sent as query params.
    */
   getMy: async (params?: {
     status?: string;
     page?: number;
     limit?: number;
   }): Promise<PaginatedResponse<Trip>> => {
-    const qs = buildQuery(
-      params?.status ? { status: params.status } : undefined,
-    );
-    const raw = await api.get<Trip[]>(`/trips/my${qs}`);
-    const list = Array.isArray(raw) ? raw : [];
+    const q: Record<string, unknown> = {};
+    if (params?.status) q.status = params.status;
+    const path = `/trips/my${buildQuery(q)}`;
+    if (import.meta.env.DEV) {
+      console.debug('[tripsService.getMy]', path);
+    }
+    const raw = await api.get<Trip[] | PaginatedResponse<Trip>>(path);
     const page = params?.page ?? 1;
     const limit = Math.max(1, params?.limit ?? 10);
+
+    if (raw == null) {
+      throw new ApiRequestError(
+        401,
+        'Could not load trips. Sign in again or refresh the page.',
+        'Unauthorized',
+      );
+    }
+
+    if (!Array.isArray(raw) && Array.isArray(raw.data)) {
+      const total = raw.total ?? raw.data.length;
+      const start = (Math.max(1, page) - 1) * limit;
+      return {
+        data: raw.data.slice(start, start + limit),
+        total,
+        page: Math.max(1, page),
+        limit,
+      };
+    }
+
+    const list = Array.isArray(raw) ? raw : [];
     return asPaginatedTrips(list, page, limit);
   },
 

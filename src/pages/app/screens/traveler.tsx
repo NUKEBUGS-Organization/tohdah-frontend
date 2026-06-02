@@ -1,6 +1,7 @@
 import {
   ActionIcon,
   Affix,
+  Anchor,
   Avatar,
   Badge,
   Box,
@@ -48,15 +49,35 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Booking, DeliveryRequest, Trip } from '../../../api/types';
 import { ApiRequestError } from '../../../api/client';
+import {
+  normalizeMongoId,
+  paginatedRows,
+  paginatedTotal,
+} from '../../../api/booking-utils';
 import { bookingsService } from '../../../api/services/bookings.service';
 import type { CreateTripData } from '../../../api/services/trips.service';
 import { tripsService } from '../../../api/services/trips.service';
 import { requestsService } from '../../../api/services/requests.service';
+import { useAuth } from '../../../context/AuthContext';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../../../hooks/useApi';
 import { usePagination } from '../../../hooks/usePagination';
 import { notify } from '../../../utils/notify';
+import {
+  emptyPaginated,
+  FRIENDLY_LOAD_ERROR,
+  resolveUserId,
+} from '../../../utils/screen-data';
 import { colors, marketplaceUi as MU } from '../../../theme';
 import { ShellCard, StatusBadge } from './shared';
+
+function tripDocId(t: Trip): string {
+  return t._id ?? (t as Trip & { id?: string }).id ?? '';
+}
+
+function requestDocId(r: DeliveryRequest): string {
+  return r._id ?? (r as DeliveryRequest & { id?: string }).id ?? '';
+}
 
 const TEAL = '#20B2AA';
 
@@ -401,6 +422,7 @@ export function TravelerSocialImpactPage() {
 
 export function TravelerReviewTripPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const state = location.state as { draft?: TripDraftForm; social?: TripSocialState } | null;
   const [submitting, setSubmitting] = useState(false);
@@ -433,6 +455,7 @@ export function TravelerReviewTripPage() {
         ...social,
       };
       await tripsService.create(payload);
+      await queryClient.invalidateQueries({ queryKey: ['trips'] });
       notify.success('Trip posted!');
       navigate('/app/traveler/trips', { replace: true });
     } catch (e) {
@@ -537,18 +560,35 @@ function tripStatusTab(tab: string): 'active' | 'completed' | 'cancelled' | unde
 
 export function TravelerTripsListPage() {
   const navigate = useNavigate();
+  const { user, isAuthenticated, isRestoring } = useAuth();
+  const userId = resolveUserId(user);
+  const authReady = isAuthenticated && !isRestoring && !!userId;
   const [tab, setTab] = useState<string>('active');
   const { page, limit, setPage } = usePagination(10);
 
   const statusFilter = tripStatusTab(tab);
 
-  const { data, isLoading } = useApi(
-    () => tripsService.getMy({ status: statusFilter, page, limit }),
-    [tab, page, limit],
-  );
+  const { data, isFetching, error, refetch } = useQuery({
+    queryKey: ['trips', 'my', tab, userId, page, limit],
+    queryFn: () =>
+      tripsService.getMy({
+        status: statusFilter,
+        page,
+        limit,
+      }),
+    enabled: authReady,
+  });
 
-  const rows = data?.data ?? [];
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
+  useEffect(() => {
+    if (import.meta.env.DEV && error) {
+      console.error('[TravelerTripsListPage] trips fetch failed:', error);
+    }
+  }, [error]);
+
+  const rows = paginatedRows(data);
+  const total = paginatedTotal(data);
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const showLoading = !authReady || isFetching;
 
   return (
     <Stack gap="lg" pb={88}>
@@ -571,14 +611,31 @@ export function TravelerTripsListPage() {
         </Tabs.List>
 
         <Tabs.Panel value={tab} pt="lg">
-          {isLoading ? (
-            <Skeleton height={120} />
+          {showLoading ? (
+            <Stack gap="sm">
+              <Skeleton height={88} />
+              <Skeleton height={88} />
+              <Skeleton height={88} />
+            </Stack>
+          ) : error ? (
+            <Stack gap="sm">
+              <Text c="dimmed" size="sm">
+                {FRIENDLY_LOAD_ERROR}
+              </Text>
+              <Button variant="light" size="xs" onClick={() => void refetch()}>
+                Retry
+              </Button>
+            </Stack>
           ) : rows.length === 0 ? (
-            <Text c={colors.mutedText}>No trips in this view.</Text>
+            <Text c={colors.mutedText}>
+              {tab === 'active'
+                ? 'No active trips. Post a route to start receiving requests.'
+                : 'No trips in this view.'}
+            </Text>
           ) : (
             <Stack gap="md">
               {rows.map((t: Trip) => (
-                <Paper key={t._id} radius="md" p="md" withBorder shadow="xs">
+                <Paper key={normalizeMongoId(t._id)} radius="md" p="md" withBorder shadow="xs">
                   <Group justify="space-between" align="center" wrap="nowrap">
                     <Group gap="md" wrap="wrap">
                       <div>
@@ -658,29 +715,34 @@ function tripIdFromRoute(location: ReturnType<typeof useLocation>, searchParams:
 
 export function TravelerTripDetailPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const userId = resolveUserId(user);
   const tripId = tripIdFromRoute(location, searchParams);
 
-  const { data: trip, isLoading } = useApi(
+  const { data: trip, isLoading, error: tripError } = useApi(
     () => (tripId ? tripsService.getById(tripId) : Promise.resolve(null as Trip | null)),
     [tripId],
   );
 
   const { data: bookingPage, refetch: refetchBookings } = useApi(
     () =>
-      bookingsService.getMy({
-        role: 'traveler',
-        status: 'pending_acceptance',
-        limit: 50,
-      }),
-    [tripId],
+      userId
+        ? bookingsService.getMyForTraveler(userId, { limit: 50 })
+        : Promise.resolve(emptyPaginated<Booking>(50)),
+    [userId],
   );
 
   const pendingForTrip = useMemo(() => {
     const bids = bookingPage?.data ?? [];
     return bids.filter((b) => {
-      const tid = typeof b.tripId === 'object' && b.tripId && '_id' in b.tripId ? (b.tripId as Trip)._id : b.tripId;
+      if (b.status !== 'pending_acceptance' && b.status !== 'countered') return false;
+      const tid =
+        typeof b.tripId === 'object' && b.tripId && '_id' in b.tripId
+          ? (b.tripId as Trip)._id
+          : b.tripId;
       return String(tid) === tripId;
     });
   }, [bookingPage, tripId]);
@@ -688,6 +750,8 @@ export function TravelerTripDetailPage() {
   const accept = async (id: string) => {
     try {
       await bookingsService.accept(id);
+      await queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      await queryClient.invalidateQueries({ queryKey: ['requests'] });
       notify.success('Accepted');
       void refetchBookings();
     } catch (e) {
@@ -698,6 +762,7 @@ export function TravelerTripDetailPage() {
   const decline = async (id: string) => {
     try {
       await bookingsService.decline(id);
+      await queryClient.invalidateQueries({ queryKey: ['bookings'] });
       notify.success('Declined');
       void refetchBookings();
     } catch (e) {
@@ -709,8 +774,21 @@ export function TravelerTripDetailPage() {
     return <Text>Select a trip from My Trips.</Text>;
   }
 
-  if (isLoading || !trip) {
-    return <Skeleton height={200} />;
+  if (isLoading) {
+    return (
+      <Stack gap="sm">
+        <Skeleton height={40} />
+        <Skeleton height={200} />
+      </Stack>
+    );
+  }
+
+  if (tripError || !trip) {
+    return (
+      <Text c="dimmed" size="sm">
+        {tripError ? FRIENDLY_LOAD_ERROR : 'Trip not found.'}
+      </Text>
+    );
   }
 
   return (
@@ -985,6 +1063,8 @@ export function TravelerMatchDetailPage() {
 }
 
 export function TravelerBrowseRequestsPage() {
+  const { user } = useAuth();
+  const userId = resolveUserId(user);
   const { page, limit, setPage } = usePagination(10);
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
@@ -1002,38 +1082,88 @@ export function TravelerBrowseRequestsPage() {
     [origin, destination, category, page, limit],
   );
 
-  const { data, isLoading, refetch } = useApi(
+  const { data, isLoading, error: browseError, refetch } = useApi(
     () => requestsService.browse(filters),
     [filters.origin, filters.destination, filters.itemCategory, page, limit],
   );
 
-  const { data: myTrips } = useApi(() => tripsService.getMy({ status: 'active', limit: 50 }), []);
+  const { data: myTrips, refetch: refetchMyTrips } = useApi(
+    () =>
+      userId
+        ? tripsService.getMy({ status: 'active', limit: 50 })
+        : Promise.resolve(emptyPaginated<Trip>(50)),
+    [userId],
+  );
 
   const tripOptions =
     myTrips?.data?.map((t: Trip) => ({
-      value: t._id,
+      value: tripDocId(t),
       label: `${t.origin} → ${t.destination}`,
     })) ?? [];
 
   const [feeModal, setFeeModal] = useState<{ requestId: string; itemLabel: string } | null>(null);
+  const [modalTrips, setModalTrips] = useState<Trip[]>([]);
+  const [tripsLoading, setTripsLoading] = useState(false);
+  const [modalTripId, setModalTripId] = useState('');
   const [offeredFee, setOfferedFee] = useState(25);
+  const [matchLoading, setMatchLoading] = useState(false);
+
+  const closeFeeModal = () => {
+    setFeeModal(null);
+    setModalTripId('');
+    setModalTrips([]);
+    setOfferedFee(25);
+  };
+
+  const openFeeModal = async (requestId: string, itemLabel: string) => {
+    setFeeModal({ requestId, itemLabel });
+    setOfferedFee(25);
+    setTripsLoading(true);
+    try {
+      const result = await tripsService.getMy({ status: 'active', limit: 50 });
+      const active = result.data.filter((t) => t.status === 'active');
+      setModalTrips(active);
+      const preferred = tripId && active.some((t) => tripDocId(t) === tripId) ? tripId : '';
+      setModalTripId(preferred || (active[0] ? tripDocId(active[0]) : ''));
+    } catch {
+      setModalTrips([]);
+      setModalTripId('');
+      notify.error('Failed to load your trips');
+    } finally {
+      setTripsLoading(false);
+    }
+  };
+
+  const modalTripOptions = modalTrips.map((t) => ({
+    value: tripDocId(t),
+    label: `${t.origin} → ${t.destination}`,
+  }));
 
   const submitMatch = async () => {
-    if (!feeModal || !tripId) {
+    if (!feeModal) return;
+    if (!modalTripId) {
       notify.error('Select your trip and enter a fee');
       return;
     }
+    if (!offeredFee || offeredFee <= 0) {
+      notify.error('Enter a valid fee');
+      return;
+    }
+    setMatchLoading(true);
     try {
       await bookingsService.match({
         requestId: feeModal.requestId,
-        tripId,
+        tripId: modalTripId,
         offeredFee,
       });
       notify.success('Match created');
-      setFeeModal(null);
+      closeFeeModal();
       void refetch();
+      void refetchMyTrips();
     } catch (e) {
       notify.error(e instanceof Error ? e.message : 'Match failed');
+    } finally {
+      setMatchLoading(false);
     }
   };
 
@@ -1106,7 +1236,16 @@ export function TravelerBrowseRequestsPage() {
             </Paper>
 
             {isLoading ? (
-              <Skeleton height={140} />
+              <Stack gap="sm">
+                <Skeleton height={140} />
+                <Skeleton height={140} />
+              </Stack>
+            ) : browseError ? (
+              <Text c="dimmed" size="sm">
+                {FRIENDLY_LOAD_ERROR}
+              </Text>
+            ) : rows.length === 0 ? (
+              <Text c={colors.mutedText}>No open requests match your filters.</Text>
             ) : (
               <Stack gap="md">
                 {rows.map((r: DeliveryRequest) => (
@@ -1140,7 +1279,7 @@ export function TravelerBrowseRequestsPage() {
                             variant="filled"
                             radius="md"
                             styles={{ root: { background: MU.teal } }}
-                            onClick={() => setFeeModal({ requestId: r._id, itemLabel: r.itemName })}
+                            onClick={() => void openFeeModal(requestDocId(r), r.itemName)}
                           >
                             Propose match
                           </Button>
@@ -1159,11 +1298,40 @@ export function TravelerBrowseRequestsPage() {
         </Grid.Col>
       </Grid>
 
-      <Modal opened={!!feeModal} onClose={() => setFeeModal(null)} title="Offer a fee" centered>
+      <Modal opened={!!feeModal} onClose={closeFeeModal} title="Offer a fee" centered>
         <Stack gap="sm">
           <Text fz={14}>{feeModal?.itemLabel}</Text>
-          <NumberInput label="Offered fee (USD)" min={1} value={offeredFee} onChange={(v) => setOfferedFee(Number(v) || 0)} />
-          <Button onClick={() => void submitMatch()} styles={{ root: { background: MU.teal } }}>
+          {tripsLoading ? (
+            <Skeleton height={36} />
+          ) : modalTrips.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              You have no active trips.{' '}
+              <Anchor component={Link} to="/app/traveler/trips/new">
+                Post a trip first.
+              </Anchor>
+            </Text>
+          ) : (
+            <Select
+              label="Your trip"
+              placeholder="Select trip"
+              data={modalTripOptions}
+              value={modalTripId}
+              onChange={(v) => setModalTripId(v ?? '')}
+              required
+            />
+          )}
+          <NumberInput
+            label="Offered fee (USD)"
+            min={1}
+            value={offeredFee}
+            onChange={(v) => setOfferedFee(Number(v) || 0)}
+          />
+          <Button
+            loading={matchLoading}
+            disabled={tripsLoading || modalTrips.length === 0}
+            onClick={() => void submitMatch()}
+            styles={{ root: { background: MU.teal } }}
+          >
             Submit match
           </Button>
         </Stack>
@@ -1186,9 +1354,19 @@ export function TravelerBrowseRequestsPage() {
 }
 
 export function TravelerPayoutsPage() {
-  const { data, isLoading } = useApi(
-    () => bookingsService.getMy({ role: 'traveler', status: 'completed', limit: 100 }),
-    [],
+  const { user } = useAuth();
+  const userId = resolveUserId(user);
+
+  const { data, isLoading, error } = useApi(
+    () =>
+      userId
+        ? bookingsService.getMyForTraveler(userId, { limit: 100 }).then((page) => ({
+            ...page,
+            data: page.data.filter((b) => b.status === 'completed'),
+            total: page.data.filter((b) => b.status === 'completed').length,
+          }))
+        : Promise.resolve(emptyPaginated<Booking>(100)),
+    [userId],
   );
 
   const rows = data?.data ?? [];
@@ -1237,7 +1415,14 @@ export function TravelerPayoutsPage() {
           Completed bookings
         </Text>
         {isLoading ? (
-          <Skeleton height={100} />
+          <Stack gap="xs">
+            <Skeleton height={48} />
+            <Skeleton height={48} />
+          </Stack>
+        ) : error ? (
+          <Text c="dimmed" size="sm">
+            {FRIENDLY_LOAD_ERROR}
+          </Text>
         ) : rows.length === 0 ? (
           <Text c={colors.mutedText}>No completed bookings yet.</Text>
         ) : (

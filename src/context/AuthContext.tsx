@@ -12,9 +12,10 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import {
   clearTokens,
+  getAccessToken,
+  getRefreshToken,
   setAccessToken,
   setRefreshToken,
-  getRefreshToken,
 } from '../api/client';
 import type { AuthResponse, User } from '../api/types';
 import {
@@ -59,6 +60,8 @@ function postLoginPath(u: User): string {
 type AuthContextValue = {
   user: User | null;
   isLoading: boolean;
+  /** True while restoring session from refresh token on initial load */
+  isRestoring: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   /** Store tokens and load `/auth/me` (no navigation). Returns normalized user. */
@@ -79,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRestoring, setIsRestoring] = useState(true);
   const fcmForegroundUnsubRef = useRef<(() => void) | null>(null);
 
   const registerPushNotifications = useCallback(async () => {
@@ -162,28 +166,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const rt = getRefreshToken();
-      if (!rt) {
-        if (!cancelled) setIsLoading(false);
-        return;
-      }
+
+    const restoreSession = async () => {
+      setIsRestoring(true);
+      setIsLoading(true);
       try {
+        const existingAccess = getAccessToken();
+        if (existingAccess) {
+          const me = await api.get<User>('/auth/me');
+          if (!cancelled && me?.id) {
+            setUser(normalizeUser(me));
+            void registerPushNotifications();
+            return;
+          }
+        }
+
+        const refreshToken = getRefreshToken();
+        if (!refreshToken) {
+          if (!cancelled) {
+            clearTokens();
+            setUser(null);
+          }
+          return;
+        }
+
         const data = await api.post<Pick<AuthResponse, 'accessToken' | 'refreshToken'>>(
           '/auth/refresh',
-          { refreshToken: rt },
+          { refreshToken },
           { skipAuth: true },
         );
+
         if (!data?.accessToken) {
           if (!cancelled) {
             clearTokens();
             setUser(null);
-            setIsLoading(false);
           }
           return;
         }
+
         setAccessToken(data.accessToken);
         setRefreshToken(data.refreshToken);
+
         const me = await api.get<User>('/auth/me');
         if (!cancelled) {
           if (me?.id) {
@@ -200,9 +223,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
         }
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) {
+          // Brief delay so session token is stable before list queries run
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          setIsRestoring(false);
+          setIsLoading(false);
+        }
       }
-    })();
+    };
+
+    void restoreSession();
     return () => {
       cancelled = true;
     };
@@ -263,6 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       isLoading,
+      isRestoring,
       isAuthenticated: !!user,
       login,
       applyTokens,
@@ -273,6 +304,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       user,
       isLoading,
+      isRestoring,
       login,
       applyTokens,
       applyTokensFromGoogle,
