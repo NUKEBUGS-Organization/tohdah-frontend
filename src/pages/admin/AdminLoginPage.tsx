@@ -1,114 +1,138 @@
 import {
   Anchor,
-  Box,
   Button,
-  Checkbox,
-  Divider,
-  Group,
-  Paper,
+  Center,
   PasswordInput,
+  Paper,
   Stack,
   Text,
   TextInput,
+  ThemeIcon,
   Title,
 } from '@mantine/core';
-import { useForm } from '@mantine/form';
-import { IconLock, IconMail, IconShieldLock } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+import { IconLock, IconMail, IconShield } from '@tabler/icons-react';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { api, ApiRequestError, clearTokens } from '../../api/client';
+import type { AuthResponse } from '../../api/types';
+import { useAuth } from '../../context/AuthContext';
 import { adminUi as AU } from '../../theme';
+import { notify } from '../../utils/notify';
 
 export function AdminLoginPage() {
   const navigate = useNavigate();
-  const form = useForm({
-    initialValues: { email: '', password: '', remember: false },
-    validate: {
-      email: (v) => (/^\S+@\S+\.\S+$/.test(v.trim()) ? null : 'Valid email required'),
-      password: (v) => (v.length < 1 ? 'Required' : null),
-    },
-  });
+  const { applyTokens } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) {
+      notify.error('Please enter email and password');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await api.post<AuthResponse>(
+        '/auth/login',
+        { email: trimmedEmail, password },
+        { skipAuth: true },
+      );
+
+      const user = await applyTokens(data.accessToken, data.refreshToken);
+      const role = user.role ?? 'user';
+
+      if (role !== 'admin' && role !== 'superadmin') {
+        clearTokens();
+        notify.error('Access denied. Admin accounts only.');
+        window.location.assign('/admin/login');
+        return;
+      }
+
+      navigate('/admin', { replace: true });
+    } catch (err) {
+      notify.error(
+        err instanceof ApiRequestError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Login failed',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <Box
+    <Center
       mih="100vh"
+      px="md"
       style={{
         background: AU.loginBg,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
       }}
     >
       <Paper
-        maw={420}
-        w="100%"
-        p={{ base: 'lg', sm: 'xl' }}
-        radius="lg"
-        shadow="xl"
-        withBorder={false}
+        p="xl"
+        radius="xl"
+        w={420}
+        maw="100%"
+        style={{
+          background: 'rgba(255,255,255,0.92)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+        }}
       >
-        <Stack gap="lg" align="stretch">
-          <Stack align="center" gap={4}>
-            <Box
-              w={52}
-              h={52}
-              style={{
-                borderRadius: '50%',
-                background: AU.accentTeal,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <IconShieldLock size={28} stroke={1.5} color="#fff" />
-            </Box>
-            <Title order={2} fz={24} fw={800} ta="center">
-              Admin login
-            </Title>
-            <Text fz={14} c="dimmed" ta="center">
-              Sign in with your administrator credentials.
-            </Text>
-          </Stack>
+        <Stack align="center" mb="xl">
+          <ThemeIcon size={56} radius="xl" color="teal">
+            <IconShield size={28} />
+          </ThemeIcon>
+          <Title order={2}>Admin login</Title>
+          <Text c="dimmed" size="sm" ta="center">
+            Sign in with your administrator credentials.
+          </Text>
+        </Stack>
 
-          <form
-            onSubmit={form.onSubmit(() => {
-              navigate('/admin');
-            })}
+        <Stack gap="md">
+          <TextInput
+            label="Email address"
+            placeholder="admin@tohdah.com"
+            leftSection={<IconMail size={16} />}
+            value={email}
+            onChange={(e) => setEmail(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleLogin();
+            }}
+          />
+          <PasswordInput
+            label="Password"
+            placeholder="••••••••"
+            leftSection={<IconLock size={16} />}
+            value={password}
+            onChange={(e) => setPassword(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleLogin();
+            }}
+          />
+          <Button
+            fullWidth
+            size="md"
+            color="teal"
+            radius="xl"
+            loading={loading}
+            type="button"
+            onClick={() => void handleLogin()}
           >
-            <Stack gap="md">
-              <TextInput
-                label="Email address"
-                placeholder="you@organization.com"
-                radius="md"
-                leftSection={<IconMail size={16} stroke={1.5} />}
-                leftSectionPointerEvents="none"
-                {...form.getInputProps('email')}
-              />
-              <PasswordInput
-                label="Password"
-                placeholder="••••••••"
-                radius="md"
-                leftSection={<IconLock size={16} stroke={1.5} />}
-                leftSectionPointerEvents="none"
-                {...form.getInputProps('password')}
-              />
-              <Checkbox label="Remember me" {...form.getInputProps('remember', { type: 'checkbox' })} />
-              <Button type="submit" fullWidth radius="md" size="md" fz={14} fw={600} {...adminLoginBtn}>
-                Login
-              </Button>
-              <Divider />
-              <Group justify="center">
-                <Anchor href="#" fz={13}>
-                  Forgot password?
-                </Anchor>
-              </Group>
-            </Stack>
-          </form>
+            Login
+          </Button>
+          <Text ta="center" size="sm">
+            <Anchor component={Link} to="/forgot-password" c="teal">
+              Forgot password?
+            </Anchor>
+          </Text>
         </Stack>
       </Paper>
-    </Box>
+    </Center>
   );
 }
-
-const adminLoginBtn = {
-  styles: { root: { backgroundColor: AU.accentTeal, border: 'none', color: '#fff' } },
-} as const;
