@@ -80,10 +80,16 @@ export const appTheme = createTheme({
         root: {
           fontWeight: 600,
           letterSpacing: '0.01em',
+          fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           ...(props.variant === 'filled' && {
             background: 'linear-gradient(135deg, #00C9A7, #2D86FF)',
             border: 'none',
+            color: '#fff',
           }),
+        },
+        label: {
+          fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          ...(props.variant === 'filled' ? { color: '#fff' } : {}),
         },
       }),
     }),

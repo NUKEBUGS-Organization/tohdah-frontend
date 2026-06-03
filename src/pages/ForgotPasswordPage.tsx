@@ -9,6 +9,7 @@ import {
   Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
+import { useState } from 'react';
 import { IconMail } from '@tabler/icons-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiRequestError } from '../api/client';
@@ -21,6 +22,7 @@ import { colors } from '../theme';
 
 export function ForgotPasswordPage() {
   const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const form = useForm({
     initialValues: { email: '' },
     validate: {
@@ -30,12 +32,15 @@ export function ForgotPasswordPage() {
 
   const onSubmit = form.onSubmit(async (values) => {
     const email = values.email.trim().toLowerCase();
+    setIsSubmitting(true);
     try {
       await api.post('/auth/forgot-password', { email }, { skipAuth: true });
       navigate(`/verify-otp?email=${encodeURIComponent(email)}`, { replace: true });
     } catch (e) {
       const msg = e instanceof ApiRequestError ? e.message : 'Something went wrong';
       notify.error(msg);
+    } finally {
+      setIsSubmitting(false);
     }
   });
 
@@ -92,8 +97,14 @@ export function ForgotPasswordPage() {
               }}
               {...form.getInputProps('email')}
             />
-            <PrimaryGradientButton type="submit" fullWidth radius="md" size="md">
-              Send code
+            <PrimaryGradientButton
+              type="submit"
+              fullWidth
+              radius="md"
+              size="md"
+              loading={isSubmitting}
+            >
+              {isSubmitting ? 'Sending code…' : 'Send code'}
             </PrimaryGradientButton>
             <Anchor component={Link} to="/login" fz={14} c={colors.gradientFrom} ta="center">
               ← Back to log in

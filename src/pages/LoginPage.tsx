@@ -22,7 +22,7 @@ import {
   IconPlaneTilt,
   IconWorld,
 } from '@tabler/icons-react';
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiRequestError } from '../api/client';
 import { BrandWordmark } from '../components/BrandWordmark';
@@ -55,7 +55,9 @@ function LoginFeature({
 
 export function LoginPage() {
   const { login } = useAuth();
-  const [loading, setLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => () => setIsSubmitting(false), []);
 
   const handleGoogleLogin = (): void => {
     const base = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -71,7 +73,7 @@ export function LoginPage() {
   });
 
   const onSubmit = form.onSubmit(async (values) => {
-    setLoading(true);
+    setIsSubmitting(true);
     try {
       await login(values.email.trim().toLowerCase(), values.password);
     } catch (e) {
@@ -83,9 +85,23 @@ export function LoginPage() {
             : 'Sign in failed';
       notify.error(msg);
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   });
+
+  const loginButtonStyles = {
+    root: {
+      background: `linear-gradient(134deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
+      border: 'none',
+      boxShadow:
+        '0 10px 15px -3px rgba(0,107,88,0.2), 0 4px 6px -4px rgba(0,107,88,0.2)',
+      color: '#fff',
+    },
+    label: {
+      color: '#fff',
+      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    },
+  } as const;
 
   const inputStyles = {
     label: { color: colors.mutedText, letterSpacing: 0.28 },
@@ -242,17 +258,11 @@ export function LoginPage() {
                   radius={12}
                   py={17}
                   fz={18}
-                  loading={loading}
-                  styles={{
-                    root: {
-                      background: `linear-gradient(134deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
-                      border: 'none',
-                      boxShadow:
-                        '0 10px 15px -3px rgba(0,107,88,0.2), 0 4px 6px -4px rgba(0,107,88,0.2)',
-                    },
-                  }}
+                  color="white"
+                  disabled={isSubmitting}
+                  styles={loginButtonStyles}
                 >
-                  Login
+                  {isSubmitting ? 'Signing in…' : 'Login'}
                 </Button>
               </Stack>
 

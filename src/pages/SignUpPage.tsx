@@ -332,7 +332,8 @@ export function SignUpPage() {
                 size="md"
                 radius="md"
                 fullWidth
-                loading={submitting}
+                color="white"
+                disabled={submitting}
                 styles={{
                   root: {
                     background: `linear-gradient(135deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
@@ -340,10 +341,15 @@ export function SignUpPage() {
                     boxShadow:
                       '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)',
                     minHeight: 56,
+                    color: '#fff',
+                  },
+                  label: {
+                    color: '#fff',
+                    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                   },
                 }}
               >
-                Sign Up
+                {submitting ? 'Creating account…' : 'Sign Up'}
               </Button>
             </Stack>
 
