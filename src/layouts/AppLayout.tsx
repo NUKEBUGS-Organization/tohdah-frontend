@@ -202,11 +202,11 @@ export function AppLayout() {
       />
       <NavLink
         component={RouterLink}
-        to="/app/profile/public"
+        to="/app/settings/my-profile"
         label="Profile"
         leftSection={<IconUser size={18} stroke={1.5} />}
-        active={location.pathname.startsWith('/app/profile')}
-        style={navActiveStyle(location.pathname.startsWith('/app/profile'))}
+        active={location.pathname.startsWith('/app/settings/my-profile')}
+        style={navActiveStyle(location.pathname.startsWith('/app/settings/my-profile'))}
       />
       <NavLink
         component={RouterLink}
