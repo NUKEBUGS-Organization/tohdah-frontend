@@ -11,7 +11,7 @@ import {
   Title,
 } from '@mantine/core';
 import { IconLock, IconMail, IconShield } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiRequestError, clearTokens } from '../../api/client';
 import type { AuthResponse } from '../../api/types';
@@ -24,7 +24,9 @@ export function AdminLoginPage() {
   const { applyTokens } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => () => setIsSubmitting(false), []);
 
   const handleLogin = async () => {
     const trimmedEmail = email.trim().toLowerCase();
@@ -33,7 +35,7 @@ export function AdminLoginPage() {
       return;
     }
 
-    setLoading(true);
+    setIsSubmitting(true);
     try {
       const data = await api.post<AuthResponse>(
         '/auth/login',
@@ -61,7 +63,7 @@ export function AdminLoginPage() {
             : 'Login failed',
       );
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -120,11 +122,11 @@ export function AdminLoginPage() {
             size="md"
             color="teal"
             radius="xl"
-            loading={loading}
+            disabled={isSubmitting}
             type="button"
             onClick={() => void handleLogin()}
           >
-            Login
+            {isSubmitting ? 'Signing in…' : 'Login'}
           </Button>
           <Text ta="center" size="sm">
             <Anchor component={Link} to="/forgot-password" c="teal">
@@ -136,4 +138,3 @@ export function AdminLoginPage() {
     </Center>
   );
 }
-// cache bust Tue Jun  2 07:24:04 PKT 2026

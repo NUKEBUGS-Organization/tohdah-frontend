@@ -44,20 +44,32 @@ export function ScreenScaffold({
 
 type PrimaryGradientButtonProps = ButtonProps & ButtonHTMLAttributes<HTMLButtonElement>;
 
-export function PrimaryGradientButton({ children, ...rest }: PrimaryGradientButtonProps) {
+export function PrimaryGradientButton({
+  children,
+  loading,
+  disabled,
+  ...rest
+}: PrimaryGradientButtonProps) {
+  const busy = Boolean(loading);
   return (
     <Button
       {...rest}
+      disabled={disabled ?? busy}
       styles={{
         root: {
           background: `linear-gradient(134deg, ${colors.gradientFrom}, ${colors.gradientTo})`,
           border: 'none',
           boxShadow:
             '0 10px 15px -3px rgba(0,107,88,0.2), 0 4px 6px -4px rgba(0,107,88,0.2)',
+          color: '#fff',
+        },
+        label: {
+          color: '#fff',
+          fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         },
       }}
     >
-      {children}
+      {busy && typeof children === 'string' ? `${children}…` : children}
     </Button>
   );
 }

@@ -1,6 +1,6 @@
 import { Anchor, Box, PasswordInput, Stack, Text, Title } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { IconLock } from '@tabler/icons-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, ApiRequestError } from '../api/client';
@@ -13,6 +13,7 @@ type LocationState = { passwordResetToken?: string };
 export function ResetPasswordPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const state = location.state as LocationState | null;
   const token = state?.passwordResetToken ?? '';
 
@@ -38,6 +39,7 @@ export function ResetPasswordPage() {
 
   const onSubmit = form.onSubmit(async (values) => {
     if (!token) return;
+    setIsSubmitting(true);
     try {
       await api.post<{ message: string }>(
         '/auth/reset-password',
@@ -52,6 +54,8 @@ export function ResetPasswordPage() {
     } catch (e) {
       const msg = e instanceof ApiRequestError ? e.message : 'Could not reset password';
       notify.error(msg);
+    } finally {
+      setIsSubmitting(false);
     }
   });
 
@@ -96,8 +100,14 @@ export function ResetPasswordPage() {
             styles={{ input: { background: colors.inputBg, borderColor: colors.border } }}
             {...form.getInputProps('confirmPassword')}
           />
-          <PrimaryGradientButton type="submit" fullWidth radius="md" size="md">
-            Update password
+          <PrimaryGradientButton
+            type="submit"
+            fullWidth
+            radius="md"
+            size="md"
+            loading={isSubmitting}
+          >
+            {isSubmitting ? 'Updating…' : 'Update password'}
           </PrimaryGradientButton>
           <Anchor component={Link} to="/login" fz={14} c={colors.mutedText} ta="center">
             Back to log in
